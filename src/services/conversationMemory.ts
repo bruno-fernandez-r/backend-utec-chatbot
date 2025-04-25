@@ -19,6 +19,6 @@ export async function getHistory(sessionId: string): Promise<Message[]> {
 
 export async function appendHistory(sessionId: string, message: Message): Promise<void> {
   const history = await getHistory(sessionId);
-  const updated = [...history, message].slice(-10); // 5 pares usuario/asistente
+  const updated = [...history, message].slice(-14); // 7 pares usuario/asistente
   await redis.set(getRedisKey(sessionId), JSON.stringify(updated), 'EX', TTL_SECONDS);
 }
