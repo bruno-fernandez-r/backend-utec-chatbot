@@ -1,19 +1,24 @@
-
 // src/services/conversationMemory.ts
 
-// ✅ conversationMemory.ts
-
-// src/services/conversationMemory.ts
+import Redis from 'ioredis';
 
 export type Message = { role: "user" | "assistant"; content: string };
-const sessionMemory = new Map<string, Message[]>();
 
-export function getHistory(sessionId: string): Message[] {
-  return sessionMemory.get(sessionId) || [];
+const redis = new Redis(process.env.REDIS_URL || '');
+
+const TTL_SECONDS = 1800; // 30 minutos
+
+function getRedisKey(sessionId: string): string {
+  return `session:${sessionId}`;  // ✅ esta era la línea con error
 }
 
-export function appendHistory(sessionId: string, message: Message) {
-  const history = getHistory(sessionId);
+export async function getHistory(sessionId: string): Promise<Message[]> {
+  const data = await redis.get(getRedisKey(sessionId));
+  return data ? JSON.parse(data) : [];
+}
+
+export async function appendHistory(sessionId: string, message: Message): Promise<void> {
+  const history = await getHistory(sessionId);
   const updated = [...history, message].slice(-10); // 5 pares usuario/asistente
-  sessionMemory.set(sessionId, updated);
+  await redis.set(getRedisKey(sessionId), JSON.stringify(updated), 'EX', TTL_SECONDS);
 }

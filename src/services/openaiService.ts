@@ -51,7 +51,7 @@ export async function generateResponse(
       : "No se encontraron datos relevantes para responder esta consulta.";
 
     // 📜 Historial de conversación
-    const history: Message[] = getHistory(sessionId);
+    const history: Message[] = await getHistory(sessionId);
     const historyMessages: ChatCompletionMessageParam[] = history.map(m => ({
       role: m.role,
       content: m.content,
@@ -76,8 +76,8 @@ export async function generateResponse(
     const reply = response.choices[0]?.message?.content || "No tengo información suficiente.";
 
     // 💾 Guardar en historial
-    appendHistory(sessionId, { role: "user", content: userQuery });
-    appendHistory(sessionId, { role: "assistant", content: reply });
+    await appendHistory(sessionId, { role: "user", content: userQuery });
+    await appendHistory(sessionId, { role: "assistant", content: reply });
 
     return reply;
   } catch (error) {
