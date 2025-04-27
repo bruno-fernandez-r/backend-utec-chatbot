@@ -3,10 +3,6 @@ import * as chatbotService from "../services/chatbotService";
 import * as promptService from "../services/promptService";
 import { deleteAllVectorsByChatbot } from "../services/pineconeService";
 
-// 🆕 Importaciones necesarias para el endpoint de chat
-import * as pineconeService from "../services/pineconeService";
-import * as openaiService from "../services/openaiService";
-import { formatearRespuestaGPT } from "../services/formatService";
 
 export const getAllChatbots = async (_req: Request, res: Response) => {
   const chatbots = await chatbotService.getAllChatbots();
@@ -100,23 +96,4 @@ export const deletePrompt = async (req: Request, res: Response) => {
   res.json({ message: "Prompt eliminado" });
 };
 
-// 🆕 NUEVO: Endpoint para responder al chat con formateo
-export const responderChat = async (req: Request, res: Response) => {
-  try {
-    const { query, chatbotId, sessionId } = req.body;
 
-
-    if (!query || !chatbotId) {
-      return res.status(400).json({ error: "Faltan parámetros: query y chatbotId son requeridos." });
-    }
-
-    const contexto = await pineconeService.searchVectorData(query, chatbotId);
-    const respuestaRaw = await openaiService.generateResponse(query, contexto, sessionId, chatbotId);
-    const respuestaFormateada = formatearRespuestaGPT(respuestaRaw);
-
-    res.json({ respuesta: respuestaFormateada });
-  } catch (error) {
-    console.error("❌ Error al procesar chat:", error);
-    res.status(500).json({ error: "Ocurrió un error al procesar el chat." });
-  }
-};

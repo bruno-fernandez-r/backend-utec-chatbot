@@ -8,7 +8,6 @@ import {
   getPrompt,
   updatePrompt,
   deletePrompt,
-  responderChat // ✅ agregado
 } from "../controllers/chatbotController";
 
 const router = express.Router();
@@ -25,8 +24,6 @@ router.post("/", createChatbot);
 router.put("/:id", updateChatbot);
 router.delete("/:id", deleteChatbot);
 
-// 💬 NUEVA RUTA DE RESPUESTA DE CHAT
-router.post("/chat", responderChat);
 
 console.log("📡 chatbotRoutes cargado");
 
