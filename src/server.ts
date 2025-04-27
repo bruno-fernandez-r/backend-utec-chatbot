@@ -18,7 +18,7 @@ app.use(cors());
 // 🟢 Ruta raíz que muestra el estado del bot
 app.get('/', (req, res) => {
   res.set('Content-Type', 'text/plain; charset=utf-8');
-  res.send('🤖 Chatbot UTEC operativo - Versión Redis 3.0');
+  res.send('🤖 Chatbot UTEC operativo - Versión Redis');
 });
 
 app.use('/files', filesRoutes);
