@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { GoogleAuth } from "google-auth-library";
 
 /**
  * Extrae el contenido de una hoja de cálculo de Google (formato .gsheet)
@@ -7,11 +8,18 @@ import { google } from "googleapis";
  * @returns Texto plano representando la hoja de cálculo
  */
 export async function parseGoogleSheet(fileId: string): Promise<string> {
+  const base64 = process.env.GOOGLE_CREDENTIALS_BASE64;
+  if (!base64) throw new Error("La variable de entorno GOOGLE_CREDENTIALS_BASE64 no está definida.");
+
+  const credentials = JSON.parse(Buffer.from(base64, "base64").toString("utf-8"));
+
   const auth = new google.auth.JWT({
-    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    key: (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+    email: credentials.client_email,
+    key: credentials.private_key,
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
   });
+
+  await auth.authorize();
 
   const sheets = google.sheets({ version: "v4", auth });
 
