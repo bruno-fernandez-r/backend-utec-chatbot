@@ -5,7 +5,7 @@ import { saveVectorData } from "../services/pineconeService";
 
 /**
  * Entrena un chatbot a partir de un archivo de Google Drive (.gdoc o .gsheet).
- * Requiere `chatbotId`, `fileId` y `mimeType` en el body.
+ * Requiere `chatbotId`, `fileId`, `mimeType` y `name` en el body.
  */
 export const trainFromDrive = async (req: Request, res: Response): Promise<Response> => {
   console.log("📩 Solicitud recibida para entrenamiento desde Google Drive.");
@@ -14,16 +14,17 @@ export const trainFromDrive = async (req: Request, res: Response): Promise<Respo
   console.log("🧪 req.query:", req.query);
   console.log("🧪 req.body:", req.body);
 
-  const { chatbotId, fileId, mimeType } = req.body;
+  const { chatbotId, fileId, mimeType, name } = req.body;
 
   console.log("🔹 chatbotId:", chatbotId);
   console.log("🔹 fileId:", fileId);
   console.log("🔹 mimeType:", mimeType);
+  console.log("🔹 name:", name);
 
   // Validación
-  if (!chatbotId?.trim() || !fileId?.trim() || !mimeType?.trim()) {
+  if (!chatbotId?.trim() || !fileId?.trim() || !mimeType?.trim() || !name?.trim()) {
     return res.status(400).json({
-      error: "Faltan parámetros requeridos: chatbotId, fileId y mimeType.",
+      error: "Faltan parámetros requeridos: chatbotId, fileId, mimeType y name.",
     });
   }
 
@@ -45,7 +46,7 @@ export const trainFromDrive = async (req: Request, res: Response): Promise<Respo
         });
     }
 
-    await saveVectorData(fileId, fullText, chatbotId);
+    await saveVectorData(name, fullText, chatbotId);
 
     return res.status(200).json({
       success: true,

@@ -3,10 +3,24 @@ import { google, docs_v1 } from "googleapis";
 /**
  * Extrae el texto estructurado de un documento de Google Docs.
  * Incluye encabezados, párrafos y tablas en orden.
- * @param fileId ID del documento en Google Drive (formato .gdoc)
  */
 export async function parseGoogleDoc(fileId: string): Promise<string> {
-  const docs = google.docs({ version: "v1" });
+  // Cargar las credenciales desde variable de entorno en base64
+  const base64 = process.env.GOOGLE_CREDENTIALS_BASE64;
+  if (!base64) throw new Error("No se encontró GOOGLE_CREDENTIALS_BASE64 en las variables de entorno.");
+
+  const decoded = Buffer.from(base64, "base64").toString("utf8");
+  const credentials = JSON.parse(decoded);
+
+  const auth = new google.auth.JWT({
+    email: credentials.client_email,
+    key: credentials.private_key,
+    scopes: ["https://www.googleapis.com/auth/documents.readonly"],
+  });
+
+  await auth.authorize(); // esencial para inicializar el cliente JWT
+
+  const docs = google.docs({ version: "v1", auth });
 
   try {
     const res = await docs.documents.get({ documentId: fileId });
@@ -39,11 +53,12 @@ export async function parseGoogleDoc(fileId: string): Promise<string> {
 }
 
 function extractTextFromParagraph(paragraph: docs_v1.Schema$Paragraph): string {
-  const { elements, paragraphStyle } = paragraph;
-  if (!elements) return "";
+  const text = paragraph.elements
+    ?.map(el => el.textRun?.content || "")
+    .join("")
+    .trim();
 
-  const text = elements.map(el => el.textRun?.content || "").join("").trim();
-  const style = paragraphStyle?.namedStyleType;
+  const style = paragraph.paragraphStyle?.namedStyleType;
 
   if (!text) return "";
 
