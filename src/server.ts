@@ -1,41 +1,51 @@
+/**
+ * server.ts
+ * ------------------
+ * Punto de entrada principal del backend de Chatbot UTEC.
+ * Configura middlewares globales, carga las rutas disponibles y levanta el servidor Express.
+ */
+
 import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
 import cors from "cors";
 
-// Rutas del sistema
-import chatbotRoutes from './routes/chatbotRoutes';
-import filesRoutes from './routes/filesRoutes';
-import trainingRoutes from './routes/trainingRoutes';
-import chatRoutes from './routes/chatRoutes';
-import googleDriveRoutes from './routes/googleDriveRoutes';
-import googleTrainingRoutes from './routes/googleTrainingRoutes';
+// 📦 Rutas del sistema
+import chatbotRoutes from "./routes/chatbotRoutes";
+import filesRoutes from "./routes/fileRoutes";
+import trainingRoutes from "./routes/trainingRoutes";
+import chatRoutes from "./routes/chatRoutes";
+import googleDriveRoutes from "./routes/googleDriveRoutes";
+import googleTrainingRoutes from "./routes/googleTrainingRoutes";
+import trainManagementRoutes from "./routes/trainManagementRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares globales
+// 🌐 Middlewares globales
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json({ type: ['application/json', 'text/plain'] }));
+app.use(express.json({ type: ["application/json", "text/plain"] }));
 app.use(cors());
 
-// 🟢 Ruta de estado del servidor
-app.get('/', (req, res) => {
-  res.set('Content-Type', 'text/plain; charset=utf-8');
-  res.send('🤖 Chatbot UTEC operativo - Versión Redis');
+// ✅ Ruta simple para monitoreo del servidor
+app.get("/", (_req, res) => {
+  res.set("Content-Type", "text/plain; charset=utf-8");
+  res.send("🤖 Chatbot UTEC operativo - Versión Redis");
 });
 
-// Rutas de la API
-app.use('/chatbots', chatbotRoutes);
-app.use('/files', filesRoutes);
-app.use('/chat', chatRoutes);
-app.use('/train', trainingRoutes);                    // Entrenamiento Azure/PDF
-app.use('/google-drive', googleDriveRoutes);          // Listado de archivos
-app.use('/drive-train', googleTrainingRoutes);        // ✅ NUEVO: Entrenamiento Google Drive separado
+// 📌 Rutas principales del sistema
+app.use("/chatbots", chatbotRoutes);              // Gestión de bots
+app.use("/files", filesRoutes);                   // Subida, listado, descarga y borrado de PDFs
+app.use("/chat", chatRoutes);                     // Interacción del chat
+app.use("/train", trainingRoutes);                // Entrenamiento desde PDFs en Azure
+app.use("/google-drive", googleDriveRoutes);      // Exploración de archivos en Google Drive
+app.use("/drive-train", googleTrainingRoutes);    // Entrenamiento desde Google Drive
+app.use("/", trainManagementRoutes);              // Gestión avanzada de entrenamiento
 
-// Inicio del servidor
+// 🚀 Arranque del servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
 });
+
 

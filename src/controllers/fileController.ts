@@ -1,3 +1,10 @@
+/**
+ * fileController.ts
+ * ------------------
+ * Controlador para gestionar archivos PDF en Azure Blob Storage.
+ * Permite subir, listar, descargar y eliminar archivos. Al eliminar, también limpia vectores en Pinecone
+ * asociados a bots entrenados con ese archivo.
+ */
 
 import { Request, Response } from "express";
 import fs from "fs";
@@ -5,7 +12,7 @@ import path from "path";
 import { AzureBlobService } from "../services/azureBlobService";
 import {
   deleteVectorsManualmente,
-  findChatbotsByFilename
+  findChatbotsByDocumentId
 } from "../services/pineconeService";
 
 const ALLOWED_EXTENSIONS = [".pdf"];
@@ -22,7 +29,7 @@ export const uploadFile = async (req: Request, res: Response) => {
 
     if (!ALLOWED_EXTENSIONS.includes(fileExt)) {
       fs.unlinkSync(tempPath); // eliminar archivo si es inválido
-      return res.status(400).json({ error: "Solo se permiten archivos PDF (.pdf)" });
+      return res.status(400).json({ error: "Solo se permiten archivos PDF (.pdf)." });
     }
 
     const fileBuffer = fs.readFileSync(tempPath);
@@ -40,7 +47,7 @@ export const uploadFile = async (req: Request, res: Response) => {
 export const listFiles = async (_req: Request, res: Response) => {
   try {
     const files = await AzureBlobService.listFiles();
-    res.json({ files });
+    res.status(200).json({ files });
   } catch (error) {
     console.error("❌ Error al listar archivos:", error);
     res.status(500).json({ error: "Error al listar archivos." });
@@ -53,18 +60,16 @@ export const deleteFile = async (req: Request, res: Response) => {
   try {
     console.log(`🗑️ Eliminando archivo '${filename}'...`);
 
-    // 1. Buscar todos los chatbots que tengan vectores de este archivo
-    const chatbotIds = await findChatbotsByFilename(filename);
+    // Buscar todos los bots que usaron este archivo como entrenamiento
+    const chatbotIds = await findChatbotsByDocumentId(filename);
 
-    // 2. Eliminar los vectores para cada chatbot
     for (const chatbotId of chatbotIds) {
-      console.log(`🧹 Eliminando vectores de '${filename}' para chatbot '${chatbotId}'`);
+      console.log(`🧹 Eliminando vectores del archivo '${filename}' para chatbot '${chatbotId}'`);
       await deleteVectorsManualmente(filename, chatbotId);
     }
 
-    // 3. Eliminar archivo de Azure
     await AzureBlobService.deleteFile(filename);
-    console.log(`✅ Archivo '${filename}' eliminado de Azure Blob`);
+    console.log(`✅ Archivo '${filename}' eliminado de Azure Blob Storage.`);
 
     res.status(200).json({
       message: `Archivo '${filename}' y sus vectores asociados fueron eliminados correctamente.`,
@@ -80,6 +85,7 @@ export const downloadFile = async (req: Request, res: Response) => {
   const { filename } = req.params;
   try {
     const fileBuffer = await AzureBlobService.downloadFile(filename);
+
     if (!fileBuffer) {
       return res.status(404).json({ error: `Archivo '${filename}' no encontrado.` });
     }
@@ -88,6 +94,6 @@ export const downloadFile = async (req: Request, res: Response) => {
     res.send(fileBuffer);
   } catch (error) {
     console.error("❌ Error al descargar archivo:", error);
-    res.status(500).json({ error: "Error al descargar archivo." });
+    res.status(500).json({ error: "Error al descargar el archivo." });
   }
 };
