@@ -13,12 +13,13 @@ import cors from "cors";
 
 // 📦 Rutas del sistema
 import chatbotRoutes from "./routes/chatbotRoutes";
-import filesRoutes from "./routes/fileRoutes";
-import trainingRoutes from "./routes/trainingRoutes";
 import chatRoutes from "./routes/chatRoutes";
 import googleDriveRoutes from "./routes/googleDriveRoutes";
 import googleTrainingRoutes from "./routes/googleTrainingRoutes";
 import trainManagementRoutes from "./routes/trainManagementRoutes";
+import trainingAnalyticsRoutes from "./routes/trainingAnalyticsRoutes";
+import pineconeInspectionRoutes from "./routes/pineconeInspectionRoutes";
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,13 +36,14 @@ app.get("/", (_req, res) => {
 });
 
 // 📌 Rutas principales del sistema
-app.use("/chatbots", chatbotRoutes);              // Gestión de bots
-app.use("/files", filesRoutes);                   // Subida, listado, descarga y borrado de PDFs
-app.use("/chat", chatRoutes);                     // Interacción del chat
-app.use("/train", trainingRoutes);                // Entrenamiento desde PDFs en Azure
+app.use("/chatbots", chatbotRoutes);              // Gestión de bots                // Subida, listado, descarga y borrado de PDFs
+app.use("/chat", chatRoutes);                     // Interacción del chat               // Entrenamiento desde PDFs en Azure
 app.use("/google-drive", googleDriveRoutes);      // Exploración de archivos en Google Drive
 app.use("/drive-train", googleTrainingRoutes);    // Entrenamiento desde Google Drive
 app.use("/", trainManagementRoutes);              // Gestión avanzada de entrenamiento
+app.use("/train", trainingAnalyticsRoutes);
+app.use("/", pineconeInspectionRoutes);
+
 
 // 🚀 Arranque del servidor
 app.listen(PORT, () => {

@@ -6,6 +6,7 @@ dotenv.config();
 const accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME!;
 const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY!;
 const containerName = process.env.AZURE_CONTAINER_NAME!;
+const trackingFile = 'documentTracking.json';
 
 const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey);
 const blobServiceClient = new BlobServiceClient(
@@ -18,35 +19,30 @@ export class AzureBlobService {
     return blobServiceClient.getContainerClient(containerName);
   }
 
-  static async uploadFile(buffer: string | Buffer, filename: string): Promise<string> {
+  /**
+   * 📤 Sube el archivo documentTracking.json a Azure Blob Storage.
+   * Si ya existe, se sobreescribe automáticamente.
+   */
+  static async uploadTrackingJson(content: string | Buffer): Promise<void> {
     const containerClient = this.getContainerClient();
-    await containerClient.createIfNotExists(); // contenedor se crea si no existe
+    await containerClient.createIfNotExists();
 
-    const blockBlobClient = containerClient.getBlockBlobClient(filename);
-    const safeBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    const blockBlobClient = containerClient.getBlockBlobClient(trackingFile);
+    const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
 
-    await blockBlobClient.uploadData(safeBuffer);
-    console.log(`☁️ Archivo '${filename}' subido correctamente a Azure Blob`);
-    return filename;
+    await blockBlobClient.uploadData(buffer);
+    console.log(`📤 documentTracking.json actualizado en Azure Blob`);
   }
 
-  static async listFiles(): Promise<string[]> {
+  /**
+   * 📥 Descarga el archivo documentTracking.json desde Azure Blob Storage.
+   */
+  static async downloadTrackingJson(): Promise<Buffer> {
     const containerClient = this.getContainerClient();
-    const fileNames: string[] = [];
-
-    for await (const blob of containerClient.listBlobsFlat()) {
-      fileNames.push(blob.name);
-    }
-
-    return fileNames;
-  }
-
-  static async downloadFile(filename: string): Promise<Buffer> {
-    const containerClient = this.getContainerClient();
-    const blobClient = containerClient.getBlobClient(filename);
+    const blobClient = containerClient.getBlobClient(trackingFile);
 
     if (!(await blobClient.exists())) {
-      throw new Error(`El archivo '${filename}' no existe en Azure Blob Storage.`);
+      throw new Error("El archivo 'documentTracking.json' no existe en Azure Blob Storage.");
     }
 
     const downloadResponse = await blobClient.download();
@@ -58,12 +54,5 @@ export class AzureBlobService {
 
     return Buffer.concat(chunks);
   }
-
-  static async deleteFile(filename: string): Promise<void> {
-    const containerClient = this.getContainerClient();
-    const blobClient = containerClient.getBlobClient(filename);
-
-    await blobClient.deleteIfExists();
-    console.log(`🗑️ Archivo '${filename}' eliminado de Azure Blob`);
-  }
 }
+

@@ -1,5 +1,7 @@
+// Objetivo: Gestiona el estado de entrenamiento de documentos, asociando bots a documentos procesados en Pinecone
+
 import { BlobServiceClient } from "@azure/storage-blob";
-import { deleteVectorsManualmente } from "./pineconeService";
+import { deleteVectorsByDocumentId } from "./pineconeService";
 
 const CONTAINER_NAME = process.env.AZURE_CONTAINER_CONTROL!;
 const BLOB_NAME = "documentTracking.json";
@@ -9,22 +11,20 @@ const blobServiceClient = BlobServiceClient.fromConnectionString(
 );
 const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
 
-interface DocumentTrackingRecord {
+export interface DocumentTrackingRecord {
   documentId: string;
   filename: string;
+  name?: string;
   mimeType?: string;
   usedByBots: string[];
   trainedAt: string;
 }
 
-type TrackingState = Record<string, DocumentTrackingRecord>;
+export type TrackingState = Record<string, DocumentTrackingRecord>;
 
 let trackingCache: TrackingState = {};
 let isWriting = false;
 
-/**
- * Devuelve el estado actual del tracking desde Azure Blob Storage o desde caché.
- */
 export const getTrackingState = async (): Promise<TrackingState> => {
   console.log("📦 [getTrackingState] Accediendo al tracking...");
 
@@ -57,9 +57,6 @@ export const getTrackingState = async (): Promise<TrackingState> => {
   return trackingCache;
 };
 
-/**
- * Guarda el estado actualizado en Azure y en caché local.
- */
 export const saveTrackingState = async (state: TrackingState): Promise<void> => {
   if (isWriting) {
     console.warn("🚫 [saveTrackingState] Escritura bloqueada por operación concurrente.");
@@ -90,17 +87,11 @@ export const saveTrackingState = async (state: TrackingState): Promise<void> => 
   }
 };
 
-/**
- * Invalida la caché local, forzando la recarga desde Azure.
- */
 export const invalidateTrackingCache = () => {
   trackingCache = {};
   console.log("♻️ [invalidateTrackingCache] Cache limpiada.");
 };
 
-/**
- * Convierte un stream a string.
- */
 const streamToString = async (readableStream: NodeJS.ReadableStream): Promise<string> => {
   return new Promise((resolve, reject) => {
     const chunks: string[] = [];
@@ -111,7 +102,8 @@ const streamToString = async (readableStream: NodeJS.ReadableStream): Promise<st
 };
 
 /**
- * Elimina un documento del tracking y sus vectores si ya no lo usa ningún bot.
+ * ✅ Elimina un documento del tracking si no tiene bots asociados.
+ * Usa Pinecone Standard con filtros por metadata (documentId).
  */
 export const cleanupUnusedDocument = async (documentId: string): Promise<void> => {
   const state = await getTrackingState();
@@ -129,7 +121,7 @@ export const cleanupUnusedDocument = async (documentId: string): Promise<void> =
 
   try {
     console.log(`🧹 [cleanupUnusedDocument] Eliminando vectores de '${documentId}'...`);
-    await deleteVectorsManualmente(documentId, "*");
+    await deleteVectorsByDocumentId(documentId); // ✅ Nuevo método compatible con Pinecone Standard
   } catch (error) {
     console.warn("❌ [cleanupUnusedDocument] Error al borrar vectores en Pinecone:", error);
   }
@@ -140,9 +132,6 @@ export const cleanupUnusedDocument = async (documentId: string): Promise<void> =
   console.log(`✅ [cleanupUnusedDocument] Documento '${documentId}' eliminado del tracking.`);
 };
 
-/**
- * Agrega o actualiza un documento con el bot que lo entrenó.
- */
 export const updateTrackingRecord = async (params: {
   documentId: string;
   filename: string;
@@ -151,42 +140,50 @@ export const updateTrackingRecord = async (params: {
 }) => {
   const { documentId, filename, mimeType, chatbotId } = params;
   const state = await getTrackingState();
-
   const ahora = new Date().toISOString();
-  const existente = state[documentId];
 
-  console.log("📘 [updateTrackingRecord] Procesando:", {
+  const existente = state[documentId];
+  const yaRegistrado = existente?.usedByBots.includes(chatbotId);
+
+  state[documentId] = {
     documentId,
     filename,
-    chatbotId,
     mimeType,
-  });
-
-  if (existente) {
-    const yaRegistrado = existente.usedByBots.includes(chatbotId);
-    const nuevosBots = yaRegistrado ? existente.usedByBots : [...existente.usedByBots, chatbotId];
-
-    state[documentId] = {
-      ...existente,
-      filename,
-      mimeType,
-      trainedAt: ahora,
-      usedByBots: nuevosBots,
-    };
-  } else {
-    state[documentId] = {
-      documentId,
-      filename,
-      mimeType,
-      trainedAt: ahora,
-      usedByBots: [chatbotId],
-    };
-  }
+    trainedAt: ahora,
+    usedByBots: yaRegistrado
+      ? existente.usedByBots
+      : [...(existente?.usedByBots || []), chatbotId],
+    name: existente?.name ?? filename,
+  };
 
   trackingCache = state;
 
-  console.log("📦 [updateTrackingRecord] Estado actualizado:", state[documentId]);
-  console.log("💾 [updateTrackingRecord] Estado final completo:", JSON.stringify(state, null, 2));
-
+  console.log("📦 [updateTrackingRecord] Registro actualizado:", state[documentId]);
   await saveTrackingState(state);
+};
+
+export const removeChatbotFromTracking = async (chatbotId: string): Promise<void> => {
+  const state = await getTrackingState();
+  let modified = false;
+
+  for (const [documentId, record] of Object.entries(state)) {
+    if (!record.usedByBots.includes(chatbotId)) continue;
+
+    record.usedByBots = record.usedByBots.filter(id => id !== chatbotId);
+    modified = true;
+
+    if (record.usedByBots.length === 0) {
+      console.log(`🧹 Documento '${documentId}' quedó sin bots. Eliminando...`);
+      await cleanupUnusedDocument(documentId);
+    } else {
+      state[documentId] = record;
+    }
+  }
+
+  if (modified) {
+    await saveTrackingState(state);
+    console.log(`✅ [removeChatbotFromTracking] Bot '${chatbotId}' eliminado del tracking.`);
+  } else {
+    console.log(`ℹ️ [removeChatbotFromTracking] El bot '${chatbotId}' no estaba registrado en ningún documento.`);
+  }
 };

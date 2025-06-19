@@ -51,3 +51,25 @@ export async function listFilesInFolder(
     throw new Error("Error al obtener los archivos de la carpeta de Google Drive.");
   }
 }
+
+/**
+ * Devuelve los metadatos de un archivo individual de Google Drive.
+ * Incluye el `modifiedTime` necesario para saber si está desactualizado.
+ */
+export async function getFileMetadata(fileId: string): Promise<{ modifiedTime: string }> {
+  try {
+    const response = await drive.files.get({
+      fileId,
+      fields: "modifiedTime",
+    });
+
+    if (!response.data.modifiedTime) {
+      throw new Error(`No se encontró el campo modifiedTime para el archivo ${fileId}`);
+    }
+
+    return { modifiedTime: response.data.modifiedTime };
+  } catch (error) {
+    console.error(`❌ Error obteniendo metadata del archivo ${fileId}:`, error);
+    throw new Error("Error al obtener metadata del archivo.");
+  }
+}

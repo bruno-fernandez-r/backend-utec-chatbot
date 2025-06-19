@@ -1,7 +1,7 @@
-
 import { TableClient, AzureNamedKeyCredential } from "@azure/data-tables";
 import { Chatbot, ChatbotEditable } from "../models/chatbotModel";
 import { v4 as uuidv4 } from "uuid";
+import { removeChatbotFromTracking } from "./documentTrackingService"; // ✅ nueva importación
 
 // ✅ Validación segura de entorno
 const account = process.env.AZURE_STORAGE_ACCOUNT_NAME;
@@ -18,8 +18,8 @@ const client = new TableClient(
   tableName,
   credential
 );
-export async function createChatbot(data: ChatbotEditable): Promise<Chatbot>
- {
+
+export async function createChatbot(data: ChatbotEditable): Promise<Chatbot> {
   const id = uuidv4();
   const createdAt = new Date().toISOString();
 
@@ -102,12 +102,10 @@ export async function getChatbotByName(name: string): Promise<Chatbot | null> {
   return null;
 }
 
-export async function updateChatbot(id: string, updates: Partial<ChatbotEditable>): Promise<Chatbot | null>
- {
+export async function updateChatbot(id: string, updates: Partial<ChatbotEditable>): Promise<Chatbot | null> {
   const existing = await getChatbotById(id);
   if (!existing) return null;
 
-  // Si cambia el nombre, verificar duplicados
   if (updates.name && updates.name !== existing.name) {
     const sameName = await getChatbotByName(updates.name);
     if (sameName) throw new Error("DUPLICATE_NAME");
@@ -137,6 +135,7 @@ export async function updateChatbot(id: string, updates: Partial<ChatbotEditable
 export async function deleteChatbot(id: string): Promise<boolean> {
   try {
     await client.deleteEntity("chatbots", id);
+    await removeChatbotFromTracking(id); // ✅ limpieza de tracking, vectores y documentId.json
     return true;
   } catch {
     return false;

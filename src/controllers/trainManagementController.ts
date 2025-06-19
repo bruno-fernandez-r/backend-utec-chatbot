@@ -1,9 +1,9 @@
 /**
  * Controlador: trainManagementController.ts
  * -----------------------------------------
- * Este controlador elimina el vínculo entre un chatbot y un documento.
- * Además elimina los vectores del documento para ese bot, y si el documento
- * queda sin uso por ningún bot, lo elimina completamente del tracking y de Pinecone.
+ * Administra la vinculación entre chatbots y documentos entrenados.
+ * Permite olvidar documentos, eliminar vectores, sincronizar estado de entrenamiento
+ * y obtener el estado de documentos específicos.
  */
 
 import { Request, Response } from "express";
@@ -11,14 +11,16 @@ import {
   getTrackingState,
   saveTrackingState,
   cleanupUnusedDocument,
+  invalidateTrackingCache,
 } from "../services/documentTrackingService";
 import {
-  deleteVectorsManualmente,
+  deleteVectorsByDocumentId,
+  documentExistsInPinecone,
 } from "../services/pineconeService";
 
 /**
  * DELETE /train/:chatbotId/document/:documentId
- * Elimina los vectores del bot para un documento y actualiza el tracking.
+ * Desvincula el documento del bot. Si ningún bot lo usa más, elimina vectores y tracking.
  */
 export const deleteBotFromDocument = async (req: Request, res: Response) => {
   const { chatbotId, documentId } = req.params;
@@ -30,12 +32,8 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
   }
 
   try {
-    console.log(`🧽 Eliminando vectores del documento '${documentId}' para chatbot '${chatbotId}'...`);
+    console.log(`🧽 Desvinculando bot '${chatbotId}' del documento '${documentId}'...`);
 
-    // 1. Eliminar vectores de Pinecone para ese bot
-    await deleteVectorsManualmente(documentId, chatbotId);
-
-    // 2. Obtener tracking y modificar
     const tracking = await getTrackingState();
     const entry = tracking[documentId];
 
@@ -43,16 +41,15 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
       return res.status(404).json({ error: `No se encontró '${documentId}' en el tracking.` });
     }
 
-    // 3. Remover el bot del array
     entry.usedByBots = entry.usedByBots.filter(botId => botId !== chatbotId);
     tracking[documentId] = entry;
 
-    // 4. Guardar cambios
     await saveTrackingState(tracking);
     console.log(`📘 Bot '${chatbotId}' eliminado del tracking del documento '${documentId}'.`);
 
-    // 5. Si ya no lo usa ningún bot, eliminar totalmente
+    // Si ya ningún bot lo usa, se limpia
     if (entry.usedByBots.length === 0) {
+      console.log(`🧹 Documento '${documentId}' ya no es usado por ningún bot. Eliminando vectores y registro...`);
       await cleanupUnusedDocument(documentId);
     }
 
@@ -65,5 +62,90 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
     return res.status(500).json({
       error: "Error interno al eliminar el vínculo entre el bot y el documento.",
     });
+  }
+};
+
+/**
+ * DELETE /train/document/:documentId
+ * Elimina los vectores de todos los bots para un documento y actualiza el tracking.
+ */
+export const deleteDocumentFromAllBots = async (req: Request, res: Response) => {
+  const { documentId } = req.params;
+
+  if (!documentId?.trim()) {
+    return res.status(400).json({ error: "Falta el parámetro documentId." });
+  }
+
+  try {
+    console.log(`🧽 Eliminando todos los vectores del documento '${documentId}'...`);
+    await deleteVectorsByDocumentId(documentId);
+
+    const tracking = await getTrackingState();
+    delete tracking[documentId];
+    await saveTrackingState(tracking);
+
+    return res.status(200).json({
+      success: true,
+      message: `Todos los vectores del documento '${documentId}' fueron eliminados correctamente.`,
+    });
+  } catch (error) {
+    console.error("❌ Error al eliminar vectores del documento:", error);
+    return res.status(500).json({
+      error: "Error interno al eliminar vectores del documento.",
+    });
+  }
+};
+
+/**
+ * DELETE /train/purge/all
+ * Elimina absolutamente todos los vectores de todos los documentos y limpia el archivo tracking.
+ */
+export const purgeAllTrainingData = async (_req: Request, res: Response) => {
+  try {
+    console.warn("⚠️ Eliminando absolutamente todos los vectores de Pinecone...");
+
+    const tracking = await getTrackingState();
+    const documentos = Object.keys(tracking);
+
+    for (const documentId of documentos) {
+      await deleteVectorsByDocumentId(documentId);
+    }
+
+    await saveTrackingState({});
+    invalidateTrackingCache();
+
+    return res.status(200).json({
+      success: true,
+      message: "Todos los datos de entrenamiento fueron purgados correctamente.",
+    });
+  } catch (error) {
+    console.error("❌ Error al purgar todos los vectores:", error);
+    return res.status(500).json({ error: "Error interno eliminando todos los vectores." });
+  }
+};
+
+/**
+ * GET /train/:chatbotId/status/:documentId
+ * Verifica el estado del documento para un bot: actualizado, desactualizado o no entrenado.
+ */
+export const getDocumentStatus = async (req: Request, res: Response) => {
+  const { chatbotId, documentId } = req.params;
+
+  try {
+    const tracking = await getTrackingState();
+    const entry = tracking[documentId];
+
+    if (!entry) return res.status(200).json({ status: "no entrenado" });
+
+    const usado = entry.usedByBots.includes(chatbotId);
+    if (!usado) return res.status(200).json({ status: "no entrenado" });
+
+    const existe = await documentExistsInPinecone(documentId);
+    if (!existe) return res.status(200).json({ status: "desactualizado" });
+
+    return res.status(200).json({ status: "actualizado" });
+  } catch (error) {
+    console.error("❌ Error verificando estado del documento:", error);
+    return res.status(500).json({ error: "Error interno verificando el estado." });
   }
 };

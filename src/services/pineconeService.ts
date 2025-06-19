@@ -1,8 +1,15 @@
+// Servicio: pineconeService.ts
+// -----------------------------
+// Gestiona el almacenamiento, consulta y eliminación de vectores en Pinecone.
+// Esta versión está adaptada para cuentas estándar (no serverless).
+// Usa filtros por metadata (por documentId) para eliminar fragmentos.
+
 import { generateEmbeddings } from "./openaiService";
 import { pinecone } from "../config/pinecone";
 import { encode } from "gpt-3-encoder";
 import * as dotenv from "dotenv";
 import { Message } from "./conversationMemory";
+import { getTrackingState } from "./documentTrackingService";
 
 dotenv.config();
 
@@ -11,20 +18,24 @@ const SCORE_FALLBACK = 0.4;
 const TOP_K = 10;
 const MAX_TOKENS_PER_FRAGMENT = 250;
 
+/**
+ * Guarda vectores en Pinecone para un documento.
+ */
 export async function saveVectorData(input: {
   id: string;
   content: string;
-  chatbotId: string;
   metadata: {
     filename: string;
     name?: string;
     mimeType?: string;
     source: "azure" | "gdrive";
+    fragmentIndex: number;
+    documentId: string;
     [key: string]: any;
   };
 }) {
   try {
-    const { id: documentId, content, chatbotId, metadata } = input;
+    const { id: documentId, content, metadata } = input;
     const index = pinecone.index(process.env.PINECONE_INDEX!);
 
     const paragraphs = content.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
@@ -47,11 +58,11 @@ export async function saveVectorData(input: {
       fragments.push({ title: "Fragmento", text: currentFragment.trim() });
     }
 
-    console.log(`📌 Documento segmentado en ${fragments.length} bloques.`);
+    console.log(`📄 Documento segmentado en ${fragments.length} bloques.`);
 
     const vectors = await Promise.all(
       fragments.map(async (frag, i) => {
-        const vectorId = `${sanitizeId(chatbotId)}_${sanitizeId(documentId)}_part${i}`;
+        const vectorId = `${sanitizeId(documentId)}_part${i}`;
         const embedding = await generateEmbeddings(frag.text);
 
         return {
@@ -59,11 +70,8 @@ export async function saveVectorData(input: {
           values: embedding,
           metadata: {
             ...metadata,
-            filename: metadata.filename,
-            documentId,
-            chatbotId,
             content: frag.text,
-            title: frag.title
+            title: frag.title,
           },
         };
       })
@@ -77,128 +85,92 @@ export async function saveVectorData(input: {
   }
 }
 
-export async function documentExistsInPinecone(documentId: string, chatbotId: string): Promise<boolean> {
+/**
+ * Verifica si hay vectores en Pinecone para un documento.
+ */
+export async function documentExistsInPinecone(documentId: string): Promise<boolean> {
   try {
-    const index = pinecone.index(process.env.PINECONE_INDEX!);
-    const results = await index.query({
-      vector: Array(1536).fill(0),
-      topK: 1,
-      includeMetadata: true,
-      filter: {
-        documentId: { $eq: documentId },
-        chatbotId: { $eq: chatbotId },
-      },
-    });
-
-    return results.matches?.some(match =>
-      match.id.startsWith(`${sanitizeId(chatbotId)}_${sanitizeId(documentId)}_part`)
-    ) ?? false;
+    const matches = await queryByMetadata({ documentId }, 1); // ✅ sin $eq
+    return matches.length > 0;
   } catch (error) {
     console.error("❌ Error verificando en Pinecone:", error);
     return false;
   }
 }
 
-export async function deleteVectorsManualmente(documentId: string, chatbotId: string) {
+/**
+ * Consulta genérica por metadata (lectura).
+ */
+export async function queryByMetadata(filter: Record<string, any>, topK = 1000) {
+  const index = pinecone.index(process.env.PINECONE_INDEX!);
+  const results = await index.query({
+    vector: Array(1536).fill(0),
+    topK,
+    includeMetadata: true,
+    includeValues: false,
+    filter,
+  });
+  return results.matches || [];
+}
+
+/**
+ * Elimina todos los vectores asociados a un documento por su documentId (usando filtro).
+ */
+export async function deleteVectorsByDocumentId(documentId: string) {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
 
-    const filter: Record<string, any> = { documentId: { $eq: documentId } };
-    if (chatbotId !== "*") {
-      filter.chatbotId = { $eq: chatbotId };
-    }
-
-    const results = await index.query({
-      vector: Array(1536).fill(0),
-      topK: 1000,
-      includeMetadata: true,
-      filter,
+    await index.deleteMany({
+      filter: { documentId }, // ✅ sin $eq
     });
 
-    const idsToDelete = results.matches?.map(match => match.id) || [];
-    console.log("🆔 IDs a eliminar:", idsToDelete);
-
-    if (idsToDelete.length === 0) {
-      console.log("⚠️ No se encontraron vectores para eliminar.");
-      return;
-    }
-
-    for (const id of idsToDelete) {
-      await index.deleteOne(id);
-      console.log(`🧽 Vector eliminado: ${id}`);
-    }
-
-    const target = chatbotId === "*" ? "todos los bots" : `chatbot '${chatbotId}'`;
-    console.log(`🧹 Eliminados ${idsToDelete.length} vectores del documento '${documentId}' para ${target}`);
+    console.log(`🧽 Vectores eliminados por filtro de documentId '${documentId}'`);
   } catch (error) {
-    console.error("❌ Error eliminando vectores:", error);
+    console.error("❌ Error eliminando vectores con filtro:", error);
+    throw error;
   }
 }
 
-export async function deleteAllVectorsByChatbot(chatbotId: string) {
-  try {
-    const documentIds = await listDocumentsByChatbot(chatbotId);
-    if (documentIds.length === 0) {
-      console.log(`⚠️ No hay vectores asociados al chatbot ${chatbotId}`);
-      return;
-    }
-
-    for (const documentId of documentIds) {
-      await deleteVectorsManualmente(documentId, chatbotId);
-    }
-
-    console.log(`🧹 Todos los vectores del chatbot '${chatbotId}' han sido eliminados.`);
-  } catch (error) {
-    console.error("❌ Error eliminando vectores del chatbot:", error);
-  }
+/**
+ * Lista todos los fragmentos de un documento.
+ */
+export async function listVectorFragmentsByDocument(documentId: string) {
+  return await queryByMetadata({ documentId }); // ✅ sin $eq
 }
 
-export async function findChatbotsByDocumentId(documentId: string): Promise<string[]> {
-  try {
-    const index = pinecone.index(process.env.PINECONE_INDEX!);
-    const results = await index.query({
-      vector: Array(1536).fill(0),
-      topK: 1000,
-      includeMetadata: true,
-      filter: { documentId: { $eq: documentId } },
-    });
-
-    const bots = results.matches
-      ?.map(m => m.metadata?.chatbotId)
-      .filter(Boolean) as string[];
-
-    return Array.from(new Set(bots));
-  } catch (error) {
-    console.error("❌ Error buscando bots por documentId en Pinecone:", error);
-    return [];
-  }
-}
-
+/**
+ * Devuelve los documentos asociados a un bot.
+ */
 export async function listDocumentsByChatbot(chatbotId: string): Promise<string[]> {
-  try {
-    const index = pinecone.index(process.env.PINECONE_INDEX!);
-    const results = await index.query({
-      vector: Array(1536).fill(0),
-      topK: 1000,
-      includeMetadata: true,
-      filter: {
-        chatbotId: { $eq: chatbotId },
-      },
-    });
-
-    const documentIds = results.matches
-      ?.map(m => m.metadata?.documentId || m.metadata?.filename)
-      .filter((id): id is string => typeof id === "string");
-
-    return Array.from(new Set(documentIds));
-  } catch (error) {
-    console.error("❌ Error listando documentos por chatbot:", error);
-    return [];
-  }
+  const tracking = await getTrackingState();
+  return Object.entries(tracking)
+    .filter(([_, value]) => value.usedByBots.includes(chatbotId))
+    .map(([docId]) => docId);
 }
 
+/**
+ * Devuelve los bots que usan un documento.
+ */
+export async function findChatbotsByDocumentId(documentId: string): Promise<string[]> {
+  const tracking = await getTrackingState();
+  return tracking[documentId]?.usedByBots || [];
+}
+
+/**
+ * Consulta de datos relevantes por embedding.
+ */
 export async function searchVectorData(query: string, chatbotId: string, _history: Message[] = []): Promise<string> {
   try {
+    const tracking = await getTrackingState();
+    const documentos = Object.entries(tracking)
+      .filter(([_, val]) => val.usedByBots.includes(chatbotId))
+      .map(([docId]) => docId);
+
+    if (documentos.length === 0) {
+      console.warn(`⚠️ El bot '${chatbotId}' no tiene documentos asignados en usedByBots[].`);
+      return "⚠️ No hay documentos disponibles para este bot.";
+    }
+
     const index = pinecone.index(process.env.PINECONE_INDEX!);
     const embedding = await generateEmbeddings(query);
 
@@ -206,18 +178,14 @@ export async function searchVectorData(query: string, chatbotId: string, _histor
       vector: embedding,
       topK: TOP_K,
       includeMetadata: true,
-      filter: { chatbotId: { $eq: chatbotId } },
+      filter: {
+        documentId: { $in: documentos }, // ✅ esto sí está permitido
+      },
     });
 
-    results.matches?.forEach(m => console.log(`🧠 ${m.metadata?.filename} - Score: ${m.score}`));
-
-    if (!results.matches || results.matches.length === 0) {
-      return "⚠️ No se encontraron resultados.";
-    }
-
-    let relevantMatches = results.matches.filter(m => m.score && m.score >= SCORE_THRESHOLD);
+    let relevantMatches = results.matches?.filter(m => m.score && m.score >= SCORE_THRESHOLD) || [];
     if (relevantMatches.length < 5) {
-      relevantMatches = results.matches.filter(m => m.score && m.score >= SCORE_FALLBACK);
+      relevantMatches = results.matches?.filter(m => m.score && m.score >= SCORE_FALLBACK) || [];
     }
 
     if (relevantMatches.length === 0) {
@@ -249,4 +217,3 @@ export async function searchVectorData(query: string, chatbotId: string, _histor
 function sanitizeId(id: string): string {
   return id.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x00-\x7F]/g, "");
 }
-

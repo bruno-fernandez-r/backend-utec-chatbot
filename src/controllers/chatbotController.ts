@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import * as chatbotService from "../services/chatbotService";
 import * as promptService from "../services/promptService";
-import { deleteAllVectorsByChatbot } from "../services/pineconeService";
+import { listDocumentsByChatbot, deleteVectorsByDocumentId } from "../services/pineconeService";
 
 
 export const getAllChatbots = async (_req: Request, res: Response) => {
@@ -18,7 +18,6 @@ export const getChatbotById = async (req: Request, res: Response) => {
 export const createChatbot = async (req: Request, res: Response) => {
   const { name } = req.body;
 
-  // Validar nombre duplicado
   const exists = await chatbotService.getChatbotByName(name);
   if (exists) {
     return res.status(400).json({ error: "Ya existe un chatbot con ese nombre." });
@@ -57,7 +56,14 @@ export const deleteChatbot = async (req: Request, res: Response) => {
   await promptService.deletePrompt(chatbotId).catch(() => {});
 
   // 🧽 Limpiar vectores en Pinecone
-  await deleteAllVectorsByChatbot(chatbotId).catch(() => {});
+  try {
+    const documentos = await listDocumentsByChatbot(chatbotId);
+    for (const docId of documentos) {
+      await deleteVectorsByDocumentId(docId);
+    }
+  } catch (err) {
+    console.warn("⚠️ Error al eliminar vectores en Pinecone:", err);
+  }
 
   res.json({ message: "Chatbot, prompt y vectores eliminados." });
 };

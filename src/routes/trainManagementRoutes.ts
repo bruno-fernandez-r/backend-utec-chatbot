@@ -1,17 +1,32 @@
 /**
- * Ruta: trainManagementRoutes.ts
- * ------------------------------
- * Administra endpoints relacionados con la relación entre bots y documentos entrenados.
- * En esta versión incluye:
- *  - DELETE /train/:chatbotId/document/:documentId → desvincula un bot de un documento.
+ * Rutas: trainManagementRoutes.ts
+ * --------------------------------
+ * Define las rutas para operaciones de gestión del entrenamiento:
+ * olvidar documentos por bot, eliminar todos los vectores de un documento,
+ * purgar todo el sistema, verificar estado y sincronizar bots.
  */
 
-import express from "express";
-import { deleteBotFromDocument } from "../controllers/trainManagementController";
+import { Router } from "express";
+import {
+  deleteBotFromDocument,
+  deleteDocumentFromAllBots,
+  purgeAllTrainingData,
+  getDocumentStatus,
+} from "../controllers/trainManagementController";
 
-const router = express.Router();
+const router = Router();
 
-// DELETE → Remueve el bot del documento entrenado y limpia si ya no lo usa nadie
+// DELETE /train/:chatbotId/document/:documentId
 router.delete("/train/:chatbotId/document/:documentId", deleteBotFromDocument);
+
+// DELETE /train/document/:documentId
+router.delete("/train/document/:documentId", deleteDocumentFromAllBots);
+
+// DELETE /train/purge/all
+router.delete("/train/purge/all", purgeAllTrainingData);
+
+// GET /train/:chatbotId/status/:documentId
+router.get("/train/:chatbotId/status/:documentId", getDocumentStatus);
+
 
 export default router;

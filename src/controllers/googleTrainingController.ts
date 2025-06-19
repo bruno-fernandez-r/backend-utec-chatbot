@@ -1,71 +1,118 @@
+// Objetivo: Gestiona el entrenamiento de documentos desde Google Drive para chatbots y la consulta de documentos entrenados
+
 import { Request, Response } from "express";
-import { parseGoogleDoc } from "../services/googleDocsParser";
-import { parseGoogleSheet } from "../services/googleSheetsParser";
-import { saveVectorData } from "../services/pineconeService";
-import { updateTrackingRecord } from "../services/documentTrackingService";
+import { trainGoogleDocForBot } from "../services/googleTrainingService";
+import { google } from "googleapis";
+import { getTrackingState } from "../services/documentTrackingService";
+import { getChatbotById } from "../services/chatbotService";
 
 /**
- * Entrena un chatbot a partir de un archivo de Google Drive (.gdoc o .gsheet).
- * Requiere `chatbotId`, `fileId`, `mimeType` y `name` en el body.
+ * POST /drive-train/single
+ * Entrena un documento de Google Drive (.gdoc o .gsheet) para un bot.
+ * Si ya fue entrenado y no fue modificado, no repite el proceso.
  */
-export const trainFromDrive = async (req: Request, res: Response): Promise<Response> => {
-  console.log("📩 Solicitud recibida para entrenamiento desde Google Drive.");
-  console.log("🧪 req.body:", req.body);
+export const trainSingleGoogleDoc = async (req: Request, res: Response) => {
+  try {
+    const { chatbotId, fileId, name, mimeType } = req.body;
 
-  const { chatbotId, fileId, mimeType, name } = req.body;
+    if (!chatbotId || !fileId || !name || !mimeType) {
+      console.warn("⚠️ Parámetros faltantes.");
+      return res.status(400).json({
+        error: "Faltan parámetros requeridos: chatbotId, fileId, name o mimeType.",
+      });
+    }
 
-  if (!chatbotId?.trim() || !fileId?.trim() || !mimeType?.trim() || !name?.trim()) {
-    return res.status(400).json({
-      error: "Faltan parámetros requeridos: chatbotId, fileId, mimeType y name.",
+    const mimeAllowed = [
+      "application/vnd.google-apps.document",
+      "application/vnd.google-apps.spreadsheet"
+    ];
+
+    if (!mimeAllowed.includes(mimeType)) {
+      return res.status(400).json({
+        error: `El tipo MIME '${mimeType}' no está soportado para entrenamiento. Solo se aceptan Google Docs y Google Sheets.`,
+      });
+    }
+
+    console.log(`📥 Entrenando documento '${name}' (ID: ${fileId}) para bot ${chatbotId}`);
+
+    const base64 = process.env.GOOGLE_CREDENTIALS_BASE64;
+    if (!base64) {
+      console.error("❌ GOOGLE_CREDENTIALS_BASE64 no está definida.");
+      return res.status(500).json({ error: "Faltan credenciales de Google para autenticación." });
+    }
+
+    const credentials = JSON.parse(Buffer.from(base64, "base64").toString("utf-8"));
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ["https://www.googleapis.com/auth/drive.readonly"],
     });
+
+    const drive = google.drive({ version: "v3", auth });
+    const { data } = await drive.files.get({
+      fileId,
+      fields: "modifiedTime",
+    });
+
+    const modifiedTime = data.modifiedTime;
+    if (!modifiedTime) {
+      console.error("❌ No se obtuvo 'modifiedTime' del documento.");
+      return res.status(400).json({
+        error: "No se pudo obtener la fecha de modificación del documento en Google Drive.",
+      });
+    }
+
+    await trainGoogleDocForBot(
+      {
+        documentId: fileId,
+        name,
+        mimeType,
+        modifiedTime,
+      },
+      chatbotId
+    );
+
+    console.log(`✅ Entrenamiento completado o innecesario para '${name}'`);
+    return res.status(200).json({ message: "Entrenamiento completado o no requerido." });
+
+  } catch (error: any) {
+    console.error("❌ Error en trainSingleGoogleDoc:", error?.response?.data || error?.message || error);
+    return res.status(500).json({ error: "Error al entrenar documento." });
+  }
+};
+
+/**
+ * GET /train/:chatbotId/documents
+ * Devuelve los documentos entrenados por un bot, con nombre legible y ID.
+ */
+export const getTrainedDocumentsFromDrive = async (req: Request, res: Response) => {
+  const { chatbotId } = req.params;
+
+  if (!chatbotId) {
+    return res.status(400).json({ error: "chatbotId es requerido en la ruta." });
   }
 
   try {
-    let fullText = "";
-
-    switch (mimeType) {
-      case "application/vnd.google-apps.document":
-        fullText = await parseGoogleDoc(fileId);
-        break;
-      case "application/vnd.google-apps.spreadsheet":
-        fullText = await parseGoogleSheet(fileId);
-        break;
-      default:
-        return res.status(400).json({
-          error: `Tipo de archivo no soportado para entrenamiento: ${mimeType}`,
-        });
+    const bot = await getChatbotById(chatbotId);
+    if (!bot) {
+      return res.status(404).json({ error: `No se encontró el chatbot con ID '${chatbotId}'` });
     }
 
-    // 🧠 Guardar vectores en Pinecone (fragmentación interna)
-    await saveVectorData({
-      id: fileId, // ← documentId (clave técnica en Pinecone)
-      content: fullText,
-      chatbotId,
-      metadata: {
-        filename: name,      // ← nombre legible para humanos
-        documentId: fileId,  // ← redundante en metadata para trazabilidad
-        name,
-        mimeType,
-        source: "gdrive",
-      },
-    });
+    const tracking = await getTrackingState();
 
-    // 📁 Registrar en documentTracking.json
-    await updateTrackingRecord({
-      documentId: fileId,
-      filename: name,
-      mimeType,
-      chatbotId,
-    });
+    const documentos = Object.entries(tracking)
+      .filter(([_, entry]) => entry.usedByBots.includes(chatbotId))
+      .map(([documentId, entry]) => ({
+        documentId,
+        name: entry.name,
+      }));
 
     return res.status(200).json({
-      success: true,
-      message: "✅ Entrenamiento completado y registrado correctamente.",
+      chatbotId,
+      chatbotName: bot.name,
+      documents: documentos,
     });
   } catch (error) {
-    console.error("❌ Error durante el entrenamiento:", error);
-    return res.status(500).json({
-      error: "No se pudo completar el entrenamiento desde el archivo.",
-    });
+    console.error("❌ Error al obtener documentos entrenados:", error);
+    return res.status(500).json({ error: "Error interno al obtener documentos entrenados." });
   }
 };
