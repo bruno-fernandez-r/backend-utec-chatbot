@@ -1,7 +1,6 @@
 // Objetivo: Gestiona el estado de entrenamiento de documentos, asociando bots a documentos procesados en Pinecone
 
 import { BlobServiceClient } from "@azure/storage-blob";
-import { deleteVectorsByDocumentId } from "./pineconeService";
 
 const CONTAINER_NAME = process.env.AZURE_CONTAINER_CONTROL!;
 const BLOB_NAME = "documentTracking.json";
@@ -103,7 +102,7 @@ const streamToString = async (readableStream: NodeJS.ReadableStream): Promise<st
 
 /**
  * ✅ Elimina un documento del tracking si no tiene bots asociados.
- * Usa Pinecone Standard con filtros por metadata (documentId).
+ * No borra vectores directamente. Se espera que el limpiador de vectores (cleanInactiveVectors) lo haga.
  */
 export const cleanupUnusedDocument = async (documentId: string): Promise<void> => {
   const state = await getTrackingState();
@@ -119,16 +118,13 @@ export const cleanupUnusedDocument = async (documentId: string): Promise<void> =
     return;
   }
 
-  try {
-    console.log(`🧹 [cleanupUnusedDocument] Eliminando vectores de '${documentId}'...`);
-    await deleteVectorsByDocumentId(documentId); // ✅ Nuevo método compatible con Pinecone Standard
-  } catch (error) {
-    console.warn("❌ [cleanupUnusedDocument] Error al borrar vectores en Pinecone:", error);
-  }
+  // ⚠️ No se eliminan vectores directamente, se espera a la limpieza programada
+  console.log(`🧼 [cleanupUnusedDocument] Eliminando '${documentId}' del tracking. Los vectores serán limpiados por cleanInactiveVectors().`);
 
   delete state[documentId];
   trackingCache = state;
   await saveTrackingState(state);
+
   console.log(`✅ [cleanupUnusedDocument] Documento '${documentId}' eliminado del tracking.`);
 };
 
@@ -173,7 +169,7 @@ export const removeChatbotFromTracking = async (chatbotId: string): Promise<void
     modified = true;
 
     if (record.usedByBots.length === 0) {
-      console.log(`🧹 Documento '${documentId}' quedó sin bots. Eliminando...`);
+      console.log(`🧹 Documento '${documentId}' quedó sin bots. Eliminando del tracking...`);
       await cleanupUnusedDocument(documentId);
     } else {
       state[documentId] = record;

@@ -14,7 +14,6 @@ import {
   invalidateTrackingCache,
 } from "../services/documentTrackingService";
 import {
-  deleteVectorsByDocumentId,
   documentExistsInPinecone,
 } from "../services/pineconeService";
 
@@ -49,7 +48,7 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
 
     // Si ya ningún bot lo usa, se limpia
     if (entry.usedByBots.length === 0) {
-      console.log(`🧹 Documento '${documentId}' ya no es usado por ningún bot. Eliminando vectores y registro...`);
+      console.log(`🧹 Documento '${documentId}' ya no es usado por ningún bot. Eliminando del tracking...`);
       await cleanupUnusedDocument(documentId);
     }
 
@@ -67,7 +66,8 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
 
 /**
  * DELETE /train/document/:documentId
- * Elimina los vectores de todos los bots para un documento y actualiza el tracking.
+ * Elimina el documento del tracking y marca sus vectores como inactivos.
+ * La limpieza física de vectores será realizada por cleanInactiveVectors().
  */
 export const deleteDocumentFromAllBots = async (req: Request, res: Response) => {
   const { documentId } = req.params;
@@ -77,38 +77,39 @@ export const deleteDocumentFromAllBots = async (req: Request, res: Response) => 
   }
 
   try {
-    console.log(`🧽 Eliminando todos los vectores del documento '${documentId}'...`);
-    await deleteVectorsByDocumentId(documentId);
+    console.log(`🧽 Eliminando documento '${documentId}' del tracking...`);
 
     const tracking = await getTrackingState();
     delete tracking[documentId];
     await saveTrackingState(tracking);
 
+    console.log(`🗂️ Documento '${documentId}' eliminado del tracking. Los vectores serán limpiados por cleanInactiveVectors().`);
+
     return res.status(200).json({
       success: true,
-      message: `Todos los vectores del documento '${documentId}' fueron eliminados correctamente.`,
+      message: `Documento '${documentId}' eliminado del tracking. Vectores marcados como inactivos.`,
     });
   } catch (error) {
-    console.error("❌ Error al eliminar vectores del documento:", error);
+    console.error("❌ Error al eliminar el documento:", error);
     return res.status(500).json({
-      error: "Error interno al eliminar vectores del documento.",
+      error: "Error interno al eliminar el documento.",
     });
   }
 };
 
 /**
  * DELETE /train/purge/all
- * Elimina absolutamente todos los vectores de todos los documentos y limpia el archivo tracking.
+ * Elimina todo el tracking y marca todos los vectores como inactivos.
  */
 export const purgeAllTrainingData = async (_req: Request, res: Response) => {
   try {
-    console.warn("⚠️ Eliminando absolutamente todos los vectores de Pinecone...");
+    console.warn("⚠️ Eliminando todo el contenido del tracking y marcando vectores como inactivos...");
 
     const tracking = await getTrackingState();
     const documentos = Object.keys(tracking);
 
     for (const documentId of documentos) {
-      await deleteVectorsByDocumentId(documentId);
+      console.log(`🧹 Eliminando '${documentId}' del tracking...`);
     }
 
     await saveTrackingState({});
@@ -116,11 +117,11 @@ export const purgeAllTrainingData = async (_req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: "Todos los datos de entrenamiento fueron purgados correctamente.",
+      message: "Todos los documentos fueron eliminados del tracking. Los vectores serán limpiados por cleanInactiveVectors().",
     });
   } catch (error) {
-    console.error("❌ Error al purgar todos los vectores:", error);
-    return res.status(500).json({ error: "Error interno eliminando todos los vectores." });
+    console.error("❌ Error al purgar los datos de entrenamiento:", error);
+    return res.status(500).json({ error: "Error interno eliminando el tracking." });
   }
 };
 

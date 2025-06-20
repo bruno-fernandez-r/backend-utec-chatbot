@@ -2,13 +2,17 @@
  * Servicio: googleTrainingService.ts
  * -----------------------------------
  * Este servicio entrena un documento de Google Drive de forma global.
- * Se guarda una sola vez en Pinecone y luego se reutiliza entre múltiples bots.
+ * Usa estrategia de soft delete (no elimina físicamente los vectores antiguos).
+ * Actualiza el estado de entrenamiento en documentTracking.json y registra los bots asociados.
  */
 
 import { parseGoogleDoc } from "./googleDocsParser";
 import { parseGoogleSheet } from "./googleSheetsParser";
-import { saveVectorData, deleteVectorsByDocumentId } from "./pineconeService";
-import { getTrackingState, saveTrackingState } from "./documentTrackingService";
+import { saveVectorData } from "./pineconeService";
+import {
+  getTrackingState,
+  updateTrackingRecord,
+} from "./documentTrackingService";
 
 interface DriveDocument {
   documentId: string;
@@ -18,11 +22,13 @@ interface DriveDocument {
 }
 
 /**
- * Entrena un documento `.gdoc` o `.gsheet` de Google Drive de forma global.
- * Solo se entrena si está desactualizado o es nuevo.
- * Agrega el chatbot a `usedByBots[]` del tracking.
+ * Entrena un documento de Google Drive (.gdoc o .gsheet) para un chatbot.
+ * Evita reentrenamiento si ya está actualizado. Agrega el bot al tracking si es necesario.
  */
-export async function trainGoogleDocForBot(doc: DriveDocument, chatbotId: string): Promise<void> {
+export async function trainGoogleDocForBot(
+  doc: DriveDocument,
+  chatbotId: string
+): Promise<void> {
   const tracking = await getTrackingState();
   const existing = tracking[doc.documentId];
   const docModified = new Date(doc.modifiedTime);
@@ -32,37 +38,46 @@ export async function trainGoogleDocForBot(doc: DriveDocument, chatbotId: string
 
     if (lastTrained >= docModified) {
       if (!existing.usedByBots.includes(chatbotId)) {
-        existing.usedByBots.push(chatbotId);
-        tracking[doc.documentId] = existing;
-        await saveTrackingState(tracking);
-        console.log(`✅ Documento ya entrenado. Se agregó el bot '${chatbotId}' a usedByBots.`);
+        await updateTrackingRecord({
+          documentId: doc.documentId,
+          filename: doc.name,
+          mimeType: doc.mimeType,
+          chatbotId,
+        });
+        console.log(
+          `✅ Documento ya entrenado. Se agregó el bot '${chatbotId}' a usedByBots.`
+        );
       } else {
-        console.log("✅ Documento ya entrenado y bot ya registrado. No se requiere acción.");
+        console.log(
+          "✅ Documento ya entrenado y bot ya registrado. No se requiere acción."
+        );
       }
       return;
     }
 
-    console.log(`🔁 Documento '${doc.documentId}' fue modificado. Reentrenando...`);
-
-    await deleteVectorsByDocumentId(doc.documentId); // 🧹 limpieza por filtro
+    console.log(
+      `🔁 Documento '${doc.documentId}' fue modificado. Reentrenando con nueva versión...`
+    );
   }
 
-  // 📥 Extraer texto según tipo MIME
+  // 📥 Extraer contenido según tipo MIME
   let textoPlano: string;
   if (doc.mimeType === "application/vnd.google-apps.document") {
     textoPlano = await parseGoogleDoc(doc.documentId);
   } else if (doc.mimeType === "application/vnd.google-apps.spreadsheet") {
     textoPlano = await parseGoogleSheet(doc.documentId);
   } else {
-    throw new Error(`Tipo MIME no soportado para entrenamiento: ${doc.mimeType}`);
+    throw new Error(`Tipo MIME no soportado: ${doc.mimeType}`);
   }
 
   if (textoPlano.trim().length === 0) {
-    console.warn(`⚠️ El documento '${doc.name}' tiene contenido vacío tras parseo. Se omite entrenamiento.`);
+    console.warn(
+      `⚠️ El documento '${doc.name}' tiene contenido vacío. Se omite entrenamiento.`
+    );
     return;
   }
 
-  // 🧠 Generar embeddings y guardar (fragmenta internamente)
+  // 🧠 Guardar fragmentos vectorizados con metadatos
   await saveVectorData({
     id: doc.documentId,
     content: textoPlano,
@@ -72,23 +87,17 @@ export async function trainGoogleDocForBot(doc: DriveDocument, chatbotId: string
       name: doc.name,
       mimeType: doc.mimeType,
       source: "gdrive",
-      fragmentIndex: 0,
     },
   });
 
-  // 🕒 Actualizar estado en documentTracking.json
-  const ahora = new Date().toISOString();
-  tracking[doc.documentId] = {
+  // 🕒 Registrar en documentTracking.json
+  await updateTrackingRecord({
     documentId: doc.documentId,
     filename: doc.name,
     mimeType: doc.mimeType,
-    trainedAt: ahora,
-    usedByBots: existing?.usedByBots?.includes(chatbotId)
-      ? existing.usedByBots
-      : [...(existing?.usedByBots || []), chatbotId],
-  };
+    chatbotId,
+  });
 
-  await saveTrackingState(tracking);
   console.log(`🚀 Documento '${doc.name}' entrenado y registrado correctamente.`);
 }
 

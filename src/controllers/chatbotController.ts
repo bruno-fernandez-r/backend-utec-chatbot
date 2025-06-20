@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
 import * as chatbotService from "../services/chatbotService";
 import * as promptService from "../services/promptService";
-import { listDocumentsByChatbot, deleteVectorsByDocumentId } from "../services/pineconeService";
-
+import { listDocumentsByChatbot } from "../services/pineconeService";
+import { removeChatbotFromTracking } from "../services/documentTrackingService";
 
 export const getAllChatbots = async (_req: Request, res: Response) => {
   const chatbots = await chatbotService.getAllChatbots();
@@ -55,17 +55,14 @@ export const deleteChatbot = async (req: Request, res: Response) => {
   // 🧹 Limpiar prompt
   await promptService.deletePrompt(chatbotId).catch(() => {});
 
-  // 🧽 Limpiar vectores en Pinecone
+  // 🧽 Eliminar referencias del tracking y vectores no usados
   try {
-    const documentos = await listDocumentsByChatbot(chatbotId);
-    for (const docId of documentos) {
-      await deleteVectorsByDocumentId(docId);
-    }
+    await removeChatbotFromTracking(chatbotId);
   } catch (err) {
-    console.warn("⚠️ Error al eliminar vectores en Pinecone:", err);
+    console.warn("⚠️ Error al eliminar referencias del tracking:", err);
   }
 
-  res.json({ message: "Chatbot, prompt y vectores eliminados." });
+  res.json({ message: "Chatbot, prompt y vectores limpiados." });
 };
 
 export const getPrompt = async (req: Request, res: Response) => {
