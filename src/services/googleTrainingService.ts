@@ -16,7 +16,7 @@ import {
 
 interface DriveDocument {
   documentId: string;
-  name: string;
+  filename: string; // Reemplaza el uso de "name"
   mimeType: string;
   modifiedTime: string;
 }
@@ -40,7 +40,7 @@ export async function trainGoogleDocForBot(
       if (!existing.usedByBots.includes(chatbotId)) {
         await updateTrackingRecord({
           documentId: doc.documentId,
-          filename: doc.name,
+          filename: doc.filename,
           mimeType: doc.mimeType,
           chatbotId,
         });
@@ -72,7 +72,7 @@ export async function trainGoogleDocForBot(
 
   if (textoPlano.trim().length === 0) {
     console.warn(
-      `⚠️ El documento '${doc.name}' tiene contenido vacío. Se omite entrenamiento.`
+      `⚠️ El documento '${doc.filename}' tiene contenido vacío. Se omite entrenamiento.`
     );
     return;
   }
@@ -82,9 +82,8 @@ export async function trainGoogleDocForBot(
     id: doc.documentId,
     content: textoPlano,
     metadata: {
-      filename: doc.name,
+      filename: doc.filename,
       documentId: doc.documentId,
-      name: doc.name,
       mimeType: doc.mimeType,
       source: "gdrive",
     },
@@ -93,11 +92,10 @@ export async function trainGoogleDocForBot(
   // 🕒 Registrar en documentTracking.json
   await updateTrackingRecord({
     documentId: doc.documentId,
-    filename: doc.name,
+    filename: doc.filename,
     mimeType: doc.mimeType,
     chatbotId,
   });
 
-  console.log(`🚀 Documento '${doc.name}' entrenado y registrado correctamente.`);
+  console.log(`🚀 Documento '${doc.filename}' entrenado y registrado correctamente.`);
 }
-

@@ -1,6 +1,12 @@
-// Objetivo: Gestiona el estado de entrenamiento de documentos, asociando bots a documentos procesados en Pinecone
+/**
+ * Servicio: documentTrackingService.ts
+ * -------------------------------------
+ * Gestiona el estado de entrenamiento de documentos, asociando bots a documentos
+ * y controlando su estado en Azure Blob Storage y Pinecone.
+ */
 
 import { BlobServiceClient } from "@azure/storage-blob";
+import { pinecone } from "../config/pinecone";
 
 const CONTAINER_NAME = process.env.AZURE_CONTAINER_CONTROL!;
 const BLOB_NAME = "documentTracking.json";
@@ -13,7 +19,6 @@ const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
 export interface DocumentTrackingRecord {
   documentId: string;
   filename: string;
-  name?: string;
   mimeType?: string;
   usedByBots: string[];
   trainedAt: string;
@@ -102,7 +107,7 @@ const streamToString = async (readableStream: NodeJS.ReadableStream): Promise<st
 
 /**
  * ✅ Elimina un documento del tracking si no tiene bots asociados.
- * No borra vectores directamente. Se espera que el limpiador de vectores (cleanInactiveVectors) lo haga.
+ * Marca todos sus fragmentos en Pinecone como `is_active: false`.
  */
 export const cleanupUnusedDocument = async (documentId: string): Promise<void> => {
   const state = await getTrackingState();
@@ -118,13 +123,43 @@ export const cleanupUnusedDocument = async (documentId: string): Promise<void> =
     return;
   }
 
-  // ⚠️ No se eliminan vectores directamente, se espera a la limpieza programada
-  console.log(`🧼 [cleanupUnusedDocument] Eliminando '${documentId}' del tracking. Los vectores serán limpiados por cleanInactiveVectors().`);
+  try {
+    const index = pinecone.index(process.env.PINECONE_INDEX!);
+
+    console.log(`🧹 [cleanupUnusedDocument] Desactivando vectores de '${documentId}'...`);
+
+    const result = await index.query({
+      vector: Array(1536).fill(0),
+      topK: 100,
+      includeMetadata: true,
+      includeValues: true,
+      filter: { documentId },
+    });
+
+    const toDeactivate = result.matches?.filter(m => m.metadata?.is_active) || [];
+
+    if (toDeactivate.length > 0) {
+      const updates = toDeactivate.map(m => ({
+        id: m.id,
+        values: m.values!,
+        metadata: {
+          ...m.metadata,
+          is_active: false,
+        },
+      }));
+
+      await index.upsert(updates);
+      console.log(`✅ [cleanupUnusedDocument] ${updates.length} vectores marcados como inactivos.`);
+    } else {
+      console.log(`ℹ️ [cleanupUnusedDocument] No se encontraron vectores activos para desactivar.`);
+    }
+  } catch (error) {
+    console.warn("❌ [cleanupUnusedDocument] Error al desactivar vectores en Pinecone:", error);
+  }
 
   delete state[documentId];
   trackingCache = state;
   await saveTrackingState(state);
-
   console.log(`✅ [cleanupUnusedDocument] Documento '${documentId}' eliminado del tracking.`);
 };
 
@@ -149,7 +184,6 @@ export const updateTrackingRecord = async (params: {
     usedByBots: yaRegistrado
       ? existente.usedByBots
       : [...(existente?.usedByBots || []), chatbotId],
-    name: existente?.name ?? filename,
   };
 
   trackingCache = state;
@@ -169,7 +203,7 @@ export const removeChatbotFromTracking = async (chatbotId: string): Promise<void
     modified = true;
 
     if (record.usedByBots.length === 0) {
-      console.log(`🧹 Documento '${documentId}' quedó sin bots. Eliminando del tracking...`);
+      console.log(`🧹 Documento '${documentId}' quedó sin bots. Eliminando...`);
       await cleanupUnusedDocument(documentId);
     } else {
       state[documentId] = record;

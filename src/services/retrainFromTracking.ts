@@ -11,7 +11,6 @@ import { getFileMetadata } from "./googleDriveService";
 export interface DocumentTrackingRecord {
   documentId: string;
   filename: string;
-  name?: string;
   mimeType?: string;
   usedByBots: string[];
   trainedAt: string;
@@ -51,7 +50,7 @@ export async function retrainDocumentIfNeeded(
 
     const doc = {
       documentId: record.documentId,
-      name: record.filename,
+      filename: record.filename,
       mimeType: mime,
       modifiedTime: metadata.modifiedTime,
     };

@@ -13,12 +13,12 @@ import { getChatbotById } from "../services/chatbotService";
  */
 export const trainSingleGoogleDoc = async (req: Request, res: Response) => {
   try {
-    const { chatbotId, fileId, name, mimeType } = req.body;
+    const { chatbotId, fileId, filename, mimeType } = req.body;
 
-    if (!chatbotId || !fileId || !name || !mimeType) {
+    if (!chatbotId || !fileId || !filename || !mimeType) {
       console.warn("⚠️ Parámetros faltantes.");
       return res.status(400).json({
-        error: "Faltan parámetros requeridos: chatbotId, fileId, name o mimeType.",
+        error: "Faltan parámetros requeridos: chatbotId, fileId, filename o mimeType.",
       });
     }
 
@@ -33,7 +33,7 @@ export const trainSingleGoogleDoc = async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`📥 Entrenando documento '${name}' (ID: ${fileId}) para bot ${chatbotId}`);
+    console.log(`📥 Entrenando documento '${filename}' (ID: ${fileId}) para bot ${chatbotId}`);
 
     const base64 = process.env.GOOGLE_CREDENTIALS_BASE64;
     if (!base64) {
@@ -64,14 +64,14 @@ export const trainSingleGoogleDoc = async (req: Request, res: Response) => {
     await trainGoogleDocForBot(
       {
         documentId: fileId,
-        name,
+        filename,
         mimeType,
         modifiedTime,
       },
       chatbotId
     );
 
-    console.log(`✅ Entrenamiento completado o innecesario para '${name}'`);
+    console.log(`✅ Entrenamiento completado o innecesario para '${filename}'`);
     return res.status(200).json({ message: "Entrenamiento completado o no requerido." });
 
   } catch (error: any) {
@@ -103,7 +103,7 @@ export const getTrainedDocumentsFromDrive = async (req: Request, res: Response) 
       .filter(([_, entry]) => entry.usedByBots.includes(chatbotId))
       .map(([documentId, entry]) => ({
         documentId,
-        name: entry.name,
+        filename: entry.filename,
       }));
 
     return res.status(200).json({

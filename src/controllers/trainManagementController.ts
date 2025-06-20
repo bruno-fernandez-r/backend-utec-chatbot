@@ -40,6 +40,14 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
       return res.status(404).json({ error: `No se encontró '${documentId}' en el tracking.` });
     }
 
+    const wasLinked = entry.usedByBots.includes(chatbotId);
+    if (!wasLinked) {
+      return res.status(200).json({
+        success: false,
+        message: `El bot '${chatbotId}' no estaba asociado al documento '${documentId}'. No se realizaron cambios.`,
+      });
+    }
+
     entry.usedByBots = entry.usedByBots.filter(botId => botId !== chatbotId);
     tracking[documentId] = entry;
 

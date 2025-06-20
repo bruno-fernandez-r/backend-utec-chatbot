@@ -1,7 +1,9 @@
-// Servicio: pineconeService.ts
-// -----------------------------
-// Gestiona el almacenamiento, consulta y eliminación de vectores en Pinecone.
-// Implementa estrategia de soft-delete con metadatos 'is_active' y 'last_trained_at_timestamp'.
+/**
+ * Servicio: pineconeService.ts
+ * -----------------------------
+ * Gestiona el almacenamiento, consulta y eliminación de vectores en Pinecone.
+ * Implementa estrategia de soft-delete con metadatos 'is_active' y 'last_trained_at_timestamp'.
+ */
 
 import { pinecone } from "../config/pinecone";
 import { generateEmbeddings } from "./openaiService";
@@ -28,7 +30,6 @@ async function _updateDocumentInPineconeInternal(
   content: string,
   baseMetadata: {
     filename: string;
-    name?: string;
     mimeType?: string;
     source: "azure" | "gdrive";
     [key: string]: any;
@@ -105,7 +106,6 @@ export async function saveVectorData(input: {
   content: string;
   metadata: {
     filename: string;
-    name?: string;
     mimeType?: string;
     source: "azure" | "gdrive";
     documentId: string;
