@@ -1,5 +1,3 @@
-// src/services/googleDriveService.ts
-
 import { google, drive_v3 } from "googleapis";
 import * as dotenv from "dotenv";
 dotenv.config();
@@ -23,20 +21,20 @@ auth.authorize().catch((error) => {
 });
 
 // ✅ Instanciar el cliente de Google Drive
-const drive = google.drive({ version: "v3", auth });
+export const drive = google.drive({ version: "v3", auth });
 
 /**
  * Lista los archivos visibles dentro de una carpeta de Google Drive.
  * @param folderId ID de la carpeta
- * @returns Array de archivos con nombre, ID y tipo MIME
+ * @returns Array de archivos con nombre, ID, tipo MIME y fecha de modificación
  */
 export async function listFilesInFolder(
   folderId: string
-): Promise<{ name: string; documentId: string; mimeType: string }[]> {
+): Promise<{ name: string; documentId: string; mimeType: string; modifiedTime: string }[]> {
   try {
     const response = await drive.files.list({
       q: `'${folderId}' in parents and trashed = false`,
-      fields: "files(id, name, mimeType)",
+      fields: "files(id, name, mimeType, modifiedTime)",
     });
 
     const files = response.data.files || [];
@@ -45,6 +43,7 @@ export async function listFilesInFolder(
       name: file.name || "Sin nombre",
       documentId: file.id || "Sin ID",
       mimeType: file.mimeType || "Desconocido",
+      modifiedTime: file.modifiedTime || "Desconocido",
     }));
   } catch (error) {
     console.error("❌ Error al listar archivos en Google Drive:", error);
@@ -73,3 +72,4 @@ export async function getFileMetadata(fileId: string): Promise<{ modifiedTime: s
     throw new Error("Error al obtener metadata del archivo.");
   }
 }
+

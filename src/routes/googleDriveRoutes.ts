@@ -1,5 +1,3 @@
-// src/routes/googleDriveRoutes.ts
-
 import express from 'express';
 import { listGoogleDriveFiles } from '../controllers/googleDriveController';
 
