@@ -1,40 +1,40 @@
-# 🤖 Chatbot con Pinecone, OpenAI y Azure Blob Storage
+# 🤖 Chatbot con Pinecone, OpenAI y Google Drive
 
-Un chatbot desarrollado para la **Universidad Tecnológica - UTEC**, que permite subir archivos PDF de forma segura a Azure Blob Storage, vectorizarlos con OpenAI y realizar búsquedas semánticas eficientes con Pinecone.  
-Incluye soporte para múltiples chatbots independientes, historial de conversación, y configuración de comportamiento vía prompt.
+Un chatbot desarrollado para la **Universidad Tecnológica - UTEC**, que permite procesar documentos de Google Drive, vectorizarlos con OpenAI y realizar búsquedas semánticas eficientes con Pinecone.
+Incluye soporte para múltiples chatbots independientes, historial de conversación, control de versiones de documentos y configuración de comportamiento vía prompt.
 
 ---
 
 ## 🚀 Características
 
-- 📂 Carga de PDFs privados en Azure Blob Storage  
-- 🔍 Vectorización con OpenAI Embeddings  
-- 🧠 Búsqueda semántica eficiente con Pinecone  
-- 🤖 Respuestas generadas por GPT-4o  
-- 💬 Historial de conversación por sesión  
-- 🧾 Soporte para múltiples chatbots independientes  
-- 🧠 Prompt de comportamiento personalizado por chatbot  
-- 📥 Entrenamiento automatizado por documento  
-- 📃 Listado de archivos por chatbot  
-- 🧽 Eliminación de vectores al eliminar archivos  
-- 🔒 Acceso controlado a archivos  
-- 🧪 Endpoints validados vía Postman  
+* 📄 Procesamiento de documentos `.gdoc` y `.gsheet` desde Google Drive
+* 🔍 Vectorización con OpenAI Embeddings
+* 🧠 Búsqueda semántica eficiente con Pinecone
+* 🔁 Control de versiones con `documentTracking.json`
+* 🧹 Limpieza automática de vectores no utilizados
+* 🧠 Prompt de comportamiento personalizado por chatbot
+* 💬 Historial de conversación por sesión
+* 📥 Entrenamiento automatizado por documento
+* 📃 Listado de archivos por chatbot
+* ❌ Endpoint para olvidar documento por bot
+* 🔒 Acceso controlado a archivos
+* 🧪 Endpoints validados vía Postman
 
 ---
 
 ## 🛠️ Tecnologías utilizadas
 
-| Tecnología         | Descripción                                                  |
-|--------------------|--------------------------------------------------------------|
-| **Node.js**        | Entorno de ejecución JavaScript                              |
-| **TypeScript**     | Tipado estático para mayor robustez                          |
-| **OpenAI API**     | Embeddings y generación de respuestas                        |
-| **Pinecone**       | Base de datos vectorial (busquedas semánticas)              |
-| **Azure Blob**     | Almacenamiento seguro y privado de PDFs                     |
-| **Azure Table**    | Metadatos de configuración por chatbot                      |
-| **Express**        | API REST backend                                             |
-| **Multer**         | Subida de archivos desde formularios                        |
-| **Postman**        | Pruebas de API REST                                          |
+| Tecnología           | Descripción                                    |
+| -------------------- | ---------------------------------------------- |
+| **Node.js**          | Entorno de ejecución JavaScript                |
+| **TypeScript**       | Tipado estático para mayor robustez            |
+| **OpenAI API**       | Embeddings y generación de respuestas          |
+| **Pinecone**         | Base de datos vectorial (búsquedas semánticas) |
+| **Google Drive API** | Acceso a documentos `.gdoc` y `.gsheet`        |
+| **Azure Blob**       | (Sólo para control de versiones)               |
+| **Azure Table**      | Metadatos de configuración por chatbot         |
+| **Express**          | API REST backend                               |
+| **Postman**          | Pruebas de API REST                            |
 
 ---
 
@@ -56,15 +56,13 @@ npm install
 Si tenés errores, corré:
 
 ```bash
-npm install express multer pdf-parse dotenv gpt-3-encoder @pinecone-database/pinecone uuid
+npm install express dotenv gpt-3-encoder @pinecone-database/pinecone uuid googleapis
 npm install --save-dev ts-node @types/express @types/node
 ```
 
 ---
 
 ## ⚙️ Configuración `.env`
-
-Crea un archivo `.env` en la raíz del proyecto y completalo con tus claves:
 
 ```env
 # 🔐 OpenAI
@@ -76,13 +74,11 @@ PINECONE_API_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 PINECONE_ENVIRONMENT=us-east-1
 PINECONE_INDEX=nombre-del-indice
 
-# ☁️ Azure Storage
-AZURE_STORAGE_ACCOUNT_NAME=nombre-cuenta
-AZURE_STORAGE_ACCOUNT_KEY=clave-secreta
-AZURE_STORAGE_CONNECTION_STRING=  # (opcional si ya configuraste nombre y key)
-AZURE_CONTAINER_NAME=conocimiento
-AZURE_PROMPT_CONTAINER=prompts
-AZURE_TABLE_NAME=chatbots
+# 📄 Google
+GOOGLE_CREDENTIALS_BASE64=  # Base64 del JSON de credenciales
+GOOGLE_SERVICE_ACCOUNT_EMAIL=xxx@developer.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nXXX\n-----END PRIVATE KEY-----\n"
+AZURE_CONTAINER_CONTROL=control-documentos
 ```
 
 > 🔒 Nunca publiques este archivo.
@@ -99,41 +95,47 @@ ts-node src/server.ts
 
 ## 📡 Endpoints principales
 
-### 📁 Subir archivo
-```
-POST /files/upload
-```
-Body `form-data`:
-- `file`: archivo PDF
+### 🔄 Entrenar chatbot (Google Drive)
 
----
-
-### 🔄 Entrenar chatbot
 ```
-POST /train/:filename?chatbotId=ID_DEL_CHATBOT
+POST /drive-train/google-drive
+```
+
+Body JSON:
+
+```json
+{
+  "documentId": "ID_DEL_DOCUMENTO",
+  "chatbotId": "ID_DEL_CHATBOT"
+}
 ```
 
 ---
 
 ### 🧾 Ver documentos entrenados
+
 ```
 GET /train/:chatbotId/documents
 ```
 
 ---
 
-### ❌ Eliminar archivo (y sus vectores)
+### ❌ Olvidar documento por bot
+
 ```
-DELETE /files/:filename
+DELETE /train/forget/:chatbotId/:documentId
 ```
 
 ---
 
 ### ✍️ Editar prompt del chatbot
+
 ```
 PUT /chatbots/:id/prompt
 ```
+
 Body JSON:
+
 ```json
 { "prompt": "Texto de comportamiento..." }
 ```
@@ -141,10 +143,13 @@ Body JSON:
 ---
 
 ### 💬 Consultar al chatbot
+
 ```
 POST /chat
 ```
+
 Body JSON:
+
 ```json
 {
   "query": "¿Qué es UTEC?",
@@ -152,6 +157,20 @@ Body JSON:
   "sessionId": "abc"
 }
 ```
+
+---
+
+## 📊 Control y versión de documentos
+
+Todos los documentos entrenados desde Google Drive se registran en un archivo `documentTracking.json` almacenado en Azure Blob Storage. Este archivo mantiene:
+
+* `documentId`: identificador técnico único
+* `name`: nombre visible del documento
+* `mimeType`: tipo MIME (`application/vnd.google-apps.document`, etc.)
+* `usedByBots`: lista de `chatbotId` que lo utilizan
+* `trainedAt`: timestamp de la última vez que fue entrenado
+
+Si un bot entrena una versión más antigua, se actualiza automáticamente. Si un documento ya no es usado por ningún bot, se eliminan sus vectores.
 
 ---
 
@@ -166,18 +185,18 @@ Body JSON:
 
 ## 🔥 Mejoras futuras
 
-- [ ] Interfaz web para gestión de chatbots
-- [ ] Panel de actividad e historial de consultas
-- [ ] Soporte para archivos DOCX / TXT
-- [ ] Roles y autenticación
+* [ ] Interfaz web para gestión de chatbots
+* [ ] Panel de actividad e historial de consultas
+* [ ] Soporte para archivos DOCX / TXT
+* [ ] Roles y autenticación
 
 ---
 
 ## 📜 Licencia
 
-Este proyecto es propiedad de la **Universidad Tecnológica del Uruguay (UTEC)**.  
-Su uso está restringido exclusivamente a fines institucionales.  
+Este proyecto es propiedad de la **Universidad Tecnológica del Uruguay (UTEC)**.
+Su uso está restringido exclusivamente a fines institucionales.
 ❗ **No está permitido reutilizar este código fuera de los fines autorizados por UTEC.**
 
-📌 **Desarrollado por**: Bruno Fernández  
+📌 **Desarrollado por**: Bruno Fernández
 🔗 [github.com/bruno-fernandez-r](https://github.com/bruno-fernandez-r)
