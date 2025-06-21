@@ -64,8 +64,62 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
 };
 
 /**
+ * DELETE /train/:chatbotId/vectors
+ * Elimina todo el rastro de un bot: lo borra de todos los documentos.
+ * Si un documento queda sin bots, se eliminan sus vectores y su entrada en el tracking.
+ */
+export const deleteAllVectorsForBot = async (req: Request, res: Response) => {
+  const { chatbotId } = req.params;
+
+  if (!chatbotId?.trim()) {
+    return res.status(400).json({ error: "Falta el parámetro chatbotId." });
+  }
+
+  try {
+    console.log(`🧹 Eliminando todos los vectores asociados al bot '${chatbotId}'...`);
+
+    const tracking = await getTrackingState();
+    let modified = false;
+    let eliminados: string[] = [];
+    let actualizados: string[] = [];
+
+    for (const [documentId, record] of Object.entries(tracking)) {
+      if (!record.usedByBots.includes(chatbotId)) continue;
+
+      // eliminar el bot
+      record.usedByBots = record.usedByBots.filter(id => id !== chatbotId);
+      modified = true;
+
+      if (record.usedByBots.length === 0) {
+        eliminados.push(documentId);
+        await cleanupUnusedDocument(documentId);
+      } else {
+        tracking[documentId] = record;
+        actualizados.push(documentId);
+      }
+    }
+
+    if (modified) {
+      await saveTrackingState(tracking);
+    }
+
+    return res.status(200).json({
+      success: true,
+      removedFrom: [...eliminados, ...actualizados],
+      documentsEliminated: eliminados,
+      documentsUpdated: actualizados,
+      message: `Bot '${chatbotId}' eliminado de ${eliminados.length + actualizados.length} documentos.`,
+    });
+  } catch (error) {
+    console.error("❌ Error al eliminar vectores del bot:", error);
+    return res.status(500).json({
+      error: "Error interno al eliminar los vectores del bot.",
+    });
+  }
+};
+
+/**
  * DELETE /train/document/:documentId
- * Desactiva los vectores del documento en Pinecone y elimina su entrada del tracking.
  */
 export const deleteDocumentFromAllBots = async (req: Request, res: Response) => {
   const { documentId } = req.params;
