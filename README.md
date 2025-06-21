@@ -24,17 +24,20 @@ Incluye soporte para múltiples chatbots independientes, historial de conversaci
 
 ## 🛠️ Tecnologías utilizadas
 
-| Tecnología           | Descripción                                    |
-| -------------------- | ---------------------------------------------- |
-| **Node.js**          | Entorno de ejecución JavaScript                |
-| **TypeScript**       | Tipado estático para mayor robustez            |
-| **OpenAI API**       | Embeddings y generación de respuestas          |
-| **Pinecone**         | Base de datos vectorial (búsquedas semánticas) |
-| **Google Drive API** | Acceso a documentos `.gdoc` y `.gsheet`        |
-| **Azure Blob**       | (Sólo para control de versiones)               |
-| **Azure Table**      | Metadatos de configuración por chatbot         |
-| **Express**          | API REST backend                               |
-| **Postman**          | Pruebas de API REST                            |
+| Tecnología             | Descripción                                                    |                     |
+| ---------------------- | -------------------------------------------------------------- | ------------------- |
+| ---------------------- | -------------------------------------------------------------- |                     |
+| **Node.js**            | Entorno de ejecución JavaScript                                |                     |
+| **TypeScript**         | Tipado estático para mayor robustez                            |                     |
+| **OpenAI API**         | Embeddings y generación de respuestas                          |                     |
+| **Pinecone**           | Base de datos vectorial (búsquedas semánticas)                 |                     |
+| **Google Drive API**   | Acceso a documentos `.gdoc` y `.gsheet`                        |                     |
+| **Azure Blob**         | (Sólo para control de versiones)                               |                     |
+| **Azure Table**        | Metadatos de configuración por chatbot                         |                     |
+| **Express**            | API REST backend                                               |                     |
+| **Postman**            | Pruebas de API REST                                            |                     |
+| **Redis**              | Almacenamiento en memoria del historial de conversación        |                     |
+| **Docker**             | Contenedores para despliegue y portabilidad del sistema        | Pruebas de API REST |
 
 ---
 
@@ -77,8 +80,20 @@ PINECONE_INDEX=nombre-del-indice
 # 📄 Google
 GOOGLE_CREDENTIALS_BASE64=  # Base64 del JSON de credenciales
 GOOGLE_SERVICE_ACCOUNT_EMAIL=xxx@developer.gserviceaccount.com
-GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nXXX\n-----END PRIVATE KEY-----\n"
-AZURE_CONTAINER_CONTROL=control-documentos
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+XXX
+-----END PRIVATE KEY-----
+"
+
+# 💬 Redis (historial de conversación por sesión)
+REDIS_URL=AZURE_CONTAINER_CONTROL=control-documentos
+
+# ☁️ Azure (Control de versiones y metadatos)
+AZURE_STORAGE_ACCOUNT_NAME=
+AZURE_STORAGE_ACCOUNT_KEY=
+AZURE_STORAGE_CONNECTION_STRING=
+AZURE_TABLE_NAME=
+AZURE_PROMPT_CONTAINER=
 ```
 
 > 🔒 Nunca publiques este archivo.
