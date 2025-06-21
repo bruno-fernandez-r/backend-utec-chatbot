@@ -228,3 +228,5 @@ export async function searchVectorData(query: string, chatbotId: string, _histor
     throw new Error("Error buscando datos en Pinecone");
   }
 }
+
+export { pinecone };

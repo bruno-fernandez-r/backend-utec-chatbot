@@ -1,11 +1,3 @@
-/**
- * Controlador: trainManagementController.ts
- * -----------------------------------------
- * Administra la vinculación entre chatbots y documentos entrenados.
- * Permite olvidar documentos, eliminar vectores, sincronizar estado de entrenamiento
- * y obtener el estado de documentos específicos.
- */
-
 import { Request, Response } from "express";
 import {
   getTrackingState,
@@ -15,11 +7,11 @@ import {
 } from "../services/documentTrackingService";
 import {
   documentExistsInPinecone,
+  pinecone,
 } from "../services/pineconeService";
 
 /**
  * DELETE /train/:chatbotId/document/:documentId
- * Desvincula el documento del bot. Si ningún bot lo usa más, elimina vectores y tracking.
  */
 export const deleteBotFromDocument = async (req: Request, res: Response) => {
   const { chatbotId, documentId } = req.params;
@@ -54,7 +46,6 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
     await saveTrackingState(tracking);
     console.log(`📘 Bot '${chatbotId}' eliminado del tracking del documento '${documentId}'.`);
 
-    // Si ya ningún bot lo usa, se limpia
     if (entry.usedByBots.length === 0) {
       console.log(`🧹 Documento '${documentId}' ya no es usado por ningún bot. Eliminando del tracking...`);
       await cleanupUnusedDocument(documentId);
@@ -74,8 +65,7 @@ export const deleteBotFromDocument = async (req: Request, res: Response) => {
 
 /**
  * DELETE /train/document/:documentId
- * Elimina el documento del tracking y marca sus vectores como inactivos.
- * La limpieza física de vectores será realizada por cleanInactiveVectors().
+ * Desactiva los vectores del documento en Pinecone y elimina su entrada del tracking.
  */
 export const deleteDocumentFromAllBots = async (req: Request, res: Response) => {
   const { documentId } = req.params;
@@ -85,17 +75,57 @@ export const deleteDocumentFromAllBots = async (req: Request, res: Response) => 
   }
 
   try {
-    console.log(`🧽 Eliminando documento '${documentId}' del tracking...`);
+    console.log(`🧽 Eliminando completamente el documento '${documentId}' del sistema...`);
 
     const tracking = await getTrackingState();
+    const entry = tracking[documentId];
+
+    if (!entry) {
+      return res.status(404).json({ error: `No se encontró el documento '${documentId}' en el tracking.` });
+    }
+
+    const index = pinecone.index(process.env.PINECONE_INDEX!);
+    const result = await index.query({
+      vector: Array(1536).fill(0),
+      topK: 100,
+      includeMetadata: true,
+      includeValues: true,
+      filter: { documentId },
+    });
+
+    type PineconeMatch = {
+      id: string;
+      values: number[];
+      metadata: Record<string, any>;
+    };
+
+    const toDeactivate = (result.matches as PineconeMatch[])?.filter(
+      (m) => m.metadata?.is_active
+    ) || [];
+
+    if (toDeactivate.length > 0) {
+      const updates = toDeactivate.map((m) => ({
+        id: m.id,
+        values: m.values,
+        metadata: {
+          ...m.metadata,
+          is_active: false,
+        },
+      }));
+
+      await index.upsert(updates);
+      console.log(`✅ ${updates.length} vectores de '${documentId}' marcados como inactivos.`);
+    } else {
+      console.log(`ℹ️ No se encontraron vectores activos para desactivar.`);
+    }
+
     delete tracking[documentId];
     await saveTrackingState(tracking);
-
-    console.log(`🗂️ Documento '${documentId}' eliminado del tracking. Los vectores serán limpiados por cleanInactiveVectors().`);
+    console.log(`🗂️ Registro del documento '${documentId}' eliminado del tracking.`);
 
     return res.status(200).json({
       success: true,
-      message: `Documento '${documentId}' eliminado del tracking. Vectores marcados como inactivos.`,
+      message: `Documento '${documentId}' eliminado y vectores desactivados.`,
     });
   } catch (error) {
     console.error("❌ Error al eliminar el documento:", error);
@@ -107,7 +137,6 @@ export const deleteDocumentFromAllBots = async (req: Request, res: Response) => 
 
 /**
  * DELETE /train/purge/all
- * Elimina todo el tracking y marca todos los vectores como inactivos.
  */
 export const purgeAllTrainingData = async (_req: Request, res: Response) => {
   try {
@@ -125,7 +154,7 @@ export const purgeAllTrainingData = async (_req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: "Todos los documentos fueron eliminados del tracking. Los vectores serán limpiados por cleanInactiveVectors().",
+      message: "Todos los documentos fueron eliminados del tracking.",
     });
   } catch (error) {
     console.error("❌ Error al purgar los datos de entrenamiento:", error);
@@ -135,7 +164,6 @@ export const purgeAllTrainingData = async (_req: Request, res: Response) => {
 
 /**
  * GET /train/:chatbotId/status/:documentId
- * Verifica el estado del documento para un bot: actualizado, desactualizado o no entrenado.
  */
 export const getDocumentStatus = async (req: Request, res: Response) => {
   const { chatbotId, documentId } = req.params;
