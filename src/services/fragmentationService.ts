@@ -2,7 +2,7 @@
  * Servicio: fragmentationService.ts
  * ----------------------------------
  * Fragmenta un texto largo en bloques de máximo N tokens, optimizado para embeddings.
- * Utiliza el tokenizador oficial de OpenAI vía '@dqbd/tiktoken' para el modelo 'text-embedding-3-small'.
+ * Respeta encabezados jerárquicos (H1-H4) y no corta oraciones a la mitad.
  */
 
 import { encoding_for_model } from "@dqbd/tiktoken";
@@ -16,41 +16,86 @@ export interface Fragment {
 }
 
 /**
- * Fragmenta texto plano en bloques que no superen el máximo de tokens permitidos.
- * @param content El contenido a fragmentar.
- * @param maxTokens Máximo de tokens por fragmento (por defecto: 250).
- * @returns Lista de fragmentos listos para vectorizar.
+ * Fragmenta texto estructurado en secciones por encabezados y tokens.
+ * @param content Texto plano con encabezados tipo Markdown (#, ##, etc.)
+ * @param maxTokens Máximo de tokens por fragmento (por defecto: 250)
+ * @returns Lista de fragmentos listos para vectorizar
  */
 export function splitTextIntoFragments(content: string, maxTokens: number = 250): Fragment[] {
   const encoder = encoding_for_model("text-embedding-3-small");
 
-  const paragraphs = content
-    .split(/\n\s*\n/) // separa por saltos dobles de línea
-    .map(p => p.trim())
-    .filter(Boolean);
-
+  const lines = content.split("\n");
   const fragments: Fragment[] = [];
-  let currentFragment = "";
 
-  for (const paragraph of paragraphs) {
-    const currentTokens = encoder.encode(currentFragment).length;
-    const paragraphTokens = encoder.encode(paragraph).length;
+  const hierarchy: string[] = [];
+  let currentContent: string[] = [];
 
-    if (currentTokens + paragraphTokens <= maxTokens) {
-      currentFragment += paragraph + "\n\n";
+  function buildTitle(): string {
+    return hierarchy.filter(Boolean).join(" > ");
+  }
+
+  function flushFragment() {
+    const fullText = currentContent.join("\n").trim();
+    if (fullText.length === 0) return;
+
+    const tokenCount = encoder.encode(fullText).length;
+
+    if (tokenCount <= maxTokens) {
+      fragments.push({ title: buildTitle(), text: fullText });
     } else {
-      if (currentFragment) {
-        fragments.push({ title: "Fragmento", text: currentFragment.trim() });
+      fragments.push(...splitByTokenLimit(fullText, buildTitle(), encoder, maxTokens));
+    }
+
+    currentContent = [];
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    const headingMatch = /^(#{1,4})\s+(.*)/.exec(trimmed);
+    if (headingMatch) {
+      flushFragment();
+      const level = headingMatch[1].length;
+      const titleText = headingMatch[2].trim();
+
+      hierarchy.length = level - 1; // corta la jerarquía si bajamos de nivel
+      hierarchy[level - 1] = titleText;
+      continue;
+    }
+
+    currentContent.push(trimmed);
+  }
+
+  flushFragment(); // último fragmento
+  encoder.free();
+  return fragments;
+}
+
+/**
+ * Subdivide un bloque largo respetando oraciones y límite de tokens.
+ */
+function splitByTokenLimit(text: string, title: string, encoder: ReturnType<typeof encoding_for_model>, maxTokens: number): Fragment[] {
+  const sentences = text.split(/(?<=[.?!])\s+/); // separa por puntuación
+  const parts: Fragment[] = [];
+  let buffer = "";
+
+  for (const sentence of sentences) {
+    const tentative = buffer.length > 0 ? buffer + " " + sentence : sentence;
+    const tokenCount = encoder.encode(tentative).length;
+
+    if (tokenCount <= maxTokens) {
+      buffer = tentative;
+    } else {
+      if (buffer.trim().length > 0) {
+        parts.push({ title, text: buffer.trim() });
       }
-      currentFragment = paragraph + "\n\n";
+      buffer = sentence;
     }
   }
 
-  if (currentFragment.trim().length > 0) {
-    fragments.push({ title: "Fragmento", text: currentFragment.trim() });
+  if (buffer.trim().length > 0) {
+    parts.push({ title, text: buffer.trim() });
   }
 
-  encoder.free(); // liberar recursos del encoder
-
-  return fragments;
+  return parts;
 }
