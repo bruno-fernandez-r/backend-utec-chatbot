@@ -19,7 +19,7 @@ import googleTrainingRoutes from "./routes/googleTrainingRoutes";
 import trainManagementRoutes from "./routes/trainManagementRoutes";
 import trainingAnalyticsRoutes from "./routes/trainingAnalyticsRoutes";
 import pineconeInspectionRoutes from "./routes/pineconeInspectionRoutes";
-
+import vectorSyncRoutes from "./routes/vectorSyncRoutes";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +43,7 @@ app.use("/drive-train", googleTrainingRoutes);    // Entrenamiento desde Google 
 app.use("/", trainManagementRoutes);              // Gestión avanzada de entrenamiento
 app.use("/train", trainingAnalyticsRoutes);
 app.use("/", pineconeInspectionRoutes);
+app.use("/vectors", vectorSyncRoutes);
 
 
 // 🚀 Arranque del servidor

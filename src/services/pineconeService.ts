@@ -10,6 +10,7 @@ import { generateEmbeddings } from "./openaiService";
 import { splitTextIntoFragments } from "./fragmentationService";
 import { generateEmbeddingsForFragments } from "./embeddingService";
 import { getTrackingState } from "./documentTrackingService";
+// ❌ Eliminado: import { registerVectorIds } from "./vectorRegistryService";
 import { Message } from "./conversationMemory";
 import * as dotenv from "dotenv";
 
@@ -94,6 +95,8 @@ async function _updateDocumentInPineconeInternal(
     console.log(`✨ Insertando ${newVectors.length} nuevos fragmentos...`);
     await index.upsert(newVectors);
 
+    // ❌ Ya no se registra vectorIds en vectorRegistry.json aquí
+
     console.log(`✅ Documento ${documentId} actualizado exitosamente.`);
   } catch (err) {
     console.error(`❌ Error actualizando documento ${documentId}:`, err);
@@ -112,7 +115,7 @@ export async function saveVectorData(input: {
     [key: string]: any;
   };
 }) {
-  await _updateDocumentInPineconeInternal(input.id, input.content, input.metadata);
+  await _updateDocumentInPineconeInternal(input.metadata.documentId, input.content, input.metadata);
 }
 
 export async function documentExistsInPinecone(documentId: string): Promise<boolean> {
