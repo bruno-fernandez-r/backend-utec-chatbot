@@ -1,7 +1,7 @@
 
 # Usa una imagen base ligera con Node.js
 #FROM node:18-alpine
-FROM node:18
+FROM node:16-alpine
 
 # Establece el directorio de trabajo dentro del contenedor
 WORKDIR /app
@@ -22,4 +22,6 @@ ENV NODE_OPTIONS="--openssl-legacy-provider"
 EXPOSE 3000
 
 # Comando para ejecutar el servidor con ts-node
-CMD ["npx", "ts-node", "src/server.ts"]
+#CMD ["npx", "ts-node", "src/server.ts"]
+
+CMD ["sh", "-c", "node -v && node -p 'process.versions.openssl' && echo $NODE_OPTIONS && npx ts-node src/server.ts"]
