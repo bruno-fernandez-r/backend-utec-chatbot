@@ -16,7 +16,7 @@ RUN npm install
 COPY . .
 
 # ✅ Variable de entorno para compatibilidad con claves RSA (Google)
-ENV NODE_OPTIONS="--openssl-legacy-provider"
+#ENV NODE_OPTIONS="--openssl-legacy-provider"
 
 # Expone el puerto donde corre tu app
 EXPOSE 3000
