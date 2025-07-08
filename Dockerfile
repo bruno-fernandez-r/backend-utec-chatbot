@@ -24,4 +24,7 @@ EXPOSE 3000
 # Comando para ejecutar el servidor con ts-node
 #CMD ["npx", "ts-node", "src/server.ts"]
 
-CMD ["sh", "-c", "node -v && node -p 'process.versions.openssl' && echo $NODE_OPTIONS && npx ts-node src/server.ts"]
+# ✨ MODIFICACIÓN CLAVE AQUÍ ✨
+# Comando para ejecutar el servidor con ts-node, pasando la opción directamente a Node.js
+# Esto asegura que la bandera se aplique correctamente al proceso de Node.js
+CMD ["node", "--openssl-legacy-provider", "node_modules/ts-node/dist/bin.js", "src/server.ts"]
