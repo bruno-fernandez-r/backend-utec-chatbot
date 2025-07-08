@@ -32,7 +32,7 @@ app.use(cors());
 // ✅ Ruta simple para monitoreo del servidor
 app.get("/", (_req, res) => {
   res.set("Content-Type", "text/plain; charset=utf-8");
-  res.send("🤖 Chatbot UTEC operativo - Versión Redis");
+  res.send("🤖 Chatbot UTEC operativo - Versión Google");
 });
 
 // 📌 Rutas principales del sistema
